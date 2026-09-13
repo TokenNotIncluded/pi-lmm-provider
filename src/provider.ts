@@ -25,6 +25,14 @@ function decodeNativePart(value: string): string {
   return value.replaceAll('%20%2F%20', ' / ').replaceAll('%25', '%');
 }
 
+function validCost(cost: Readonly<Model<Api>['cost']>): boolean {
+  const validRates = (rates: Readonly<Model<Api>['cost']>) =>
+    [rates.input, rates.output, rates.cacheRead, rates.cacheWrite]
+      .every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+  return validRates(cost) && (cost.tiers ?? []).every((tier) =>
+    Number.isSafeInteger(tier.inputTokensAbove) && tier.inputTokensAbove >= 0 && validRates(tier));
+}
+
 function cachedEntry(model: Readonly<Model<Api>>, updatedAt: number): CatalogEntry | undefined {
   try {
     if (model.provider !== PROVIDER_ID || !(SUPPORTED_APIS as readonly string[]).includes(model.api)) return undefined;
@@ -33,8 +41,7 @@ function cachedEntry(model: Readonly<Model<Api>>, updatedAt: number): CatalogEnt
     const group = text(decodeNativePart(parts[0]!));
     const upstream = text(decodeNativePart(parts[1]!), 512);
     if (nativeModelId({ group, upstream_model: upstream }) !== model.id) return undefined;
-    const values = [model.cost.input, model.cost.output, model.cost.cacheRead, model.cost.cacheWrite];
-    if (!values.every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0)) return undefined;
+    if (!validCost(model.cost)) return undefined;
     const pricing: Pricing = {
       currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates',
       group_multiplier: null, trust_multiplier: null,
@@ -45,7 +52,7 @@ function cachedEntry(model: Readonly<Model<Api>>, updatedAt: number): CatalogEnt
     return {
       id: `lmm:${group_id}:${base64url(upstream)}`, group_id, group, upstream_model: upstream, name: `${group} / ${upstream}`,
       apis: [model.api as LmmApi], pricing,
-      native_cost: { input: model.cost.input, output: model.cost.output, cacheRead: model.cost.cacheRead, cacheWrite: model.cost.cacheWrite },
+      native_cost: structuredClone(model.cost),
     };
   } catch { return undefined; }
 }

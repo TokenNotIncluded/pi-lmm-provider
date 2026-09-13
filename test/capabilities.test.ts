@@ -1,18 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import type { Model } from '@earendil-works/pi-ai';
 import { resolveKnownCapabilities } from '../src/capabilities.ts';
 import type { CatalogEntry } from '../src/catalog.ts';
 
-function entry(model: string, apis: CatalogEntry['apis']): CatalogEntry {
-  return { upstream_model: model, apis } as CatalogEntry;
+function entry(model: string, apis: CatalogEntry['apis'], group = 'default'): CatalogEntry {
+  return { upstream_model: model, apis, group } as CatalogEntry;
 }
-test('exact known model and advertised protocol supply capabilities, never vendor cost', () => {
+test('exact known model and advertised protocol supply capabilities and a reference cost', () => {
   const result = resolveKnownCapabilities(entry('gpt-4o', ['openai-responses']));
   assert.ok(result);
   assert.equal(result.api, 'openai-responses');
   assert.ok(result.contextWindow > 0 && result.maxTokens > 0);
   assert.match(result.provenance, /openai\/gpt-4o$/);
-  assert.equal('cost' in result, false);
+  assert.ok(result.referenceCost && result.referenceCost.input >= 0);
 });
 test('unknown names, aliases and unadvertised vendor protocols remain unknown', () => {
   assert.equal(resolveKnownCapabilities(entry('gpt-4o-unverified-alias', ['openai-responses'])), undefined);
@@ -44,4 +45,14 @@ test('falls back to the complete official Pi catalog for exact model IDs', () =>
     assert.equal(result.api, 'openai-completions');
     assert.ok(result.contextWindow > 0 && result.maxTokens > 0);
   }
+});
+
+test('applies the reviewed DeepSeek proxy profile to GLM 5.3 in the domestic group', () => {
+  const result = resolveKnownCapabilities(entry('glm-5.3-flash', ['openai-completions'], '国产[Kimi/Deepseek/GLM]'));
+  assert.ok(result);
+  const compat = result.compat as NonNullable<Model<'openai-completions'>['compat']>;
+  assert.equal(compat.supportsLongCacheRetention, true);
+  assert.equal(compat.sendSessionAffinityHeaders, true);
+  assert.equal(compat.requiresReasoningContentOnAssistantMessages, true);
+  assert.equal(compat.thinkingFormat, 'deepseek');
 });

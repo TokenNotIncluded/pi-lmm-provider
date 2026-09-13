@@ -19,6 +19,19 @@ const fallbackSources: readonly Source[] = getBuiltinProviders()
   .filter((provider) => !preferredProviders.has(provider))
   .map((provider) => [provider, new Map(getBuiltinModels(provider).map((model) => [model.id, model]))]);
 
+function gatewayCompat(entry: Parameters<CapabilityResolver>[0], compat: NonNullable<Model<Api>['compat']>) {
+  if (entry.group === '国产[Kimi/Deepseek/GLM]' && (entry.upstream_model === 'glm-5.3' || entry.upstream_model === 'glm-5.3-flash')) {
+    return {
+      ...compat,
+      supportsLongCacheRetention: true,
+      sendSessionAffinityHeaders: true,
+      requiresReasoningContentOnAssistantMessages: true,
+      thinkingFormat: 'deepseek' as const,
+    };
+  }
+  return compat;
+}
+
 function candidates(entry: Parameters<CapabilityResolver>[0], sources: readonly Source[]): VerifiedCapabilities[] {
   const result: VerifiedCapabilities[] = [];
   for (const [provider, models] of sources) {
@@ -29,15 +42,15 @@ function candidates(entry: Parameters<CapabilityResolver>[0], sources: readonly 
     // still requires an exact Pi catalog model, never a name-based approximation.
     if (!nativeProtocol && (!entry.apis.includes('openai-completions') ||
       !LANGUAGE_APIS.includes(model.api))) continue;
-    const compat = nativeProtocol ? structuredClone(model.compat ?? {}) : {
+    const compat = gatewayCompat(entry, nativeProtocol ? structuredClone(model.compat ?? {}) : {
       supportsDeveloperRole: false, supportsStore: false, supportsReasoningEffort: false,
       maxTokensField: provider === 'openai' ? 'max_completion_tokens' as const : 'max_tokens' as const,
-    };
+    });
     // A vendor fallback may use a different model and price not authorized by this catalog entry.
     if ('allowedFallbackModels' in compat) delete compat.allowedFallbackModels;
     result.push({
       api: nativeProtocol ? model.api as LmmApi : 'openai-completions', contextWindow: model.contextWindow, maxTokens: model.maxTokens,
-      reasoning: nativeProtocol && model.reasoning, input: [...model.input], compat,
+      reasoning: nativeProtocol && model.reasoning, input: [...model.input], compat, referenceCost: structuredClone(model.cost),
       thinkingLevelMap: nativeProtocol && model.thinkingLevelMap ? structuredClone(model.thinkingLevelMap) : undefined,
       provenance: `pi-ai vendor catalog: ${provider}/${model.id}${nativeProtocol ? '' : '; server-advertised OpenAI-compatible transport'}`,
     });
@@ -52,7 +65,7 @@ export const resolveKnownCapabilities: CapabilityResolver = (entry) => {
   const matches = candidates(entry, preferredSources);
   const resolved = matches.length ? matches : candidates(entry, fallbackSources);
   if (!resolved.length) return undefined;
-  const profile = ({ provenance: _source, ...rest }: VerifiedCapabilities) => JSON.stringify(rest);
+  const profile = ({ provenance: _source, referenceCost: _cost, ...rest }: VerifiedCapabilities) => JSON.stringify(rest);
   const first = resolved[0]!;
   // Ambiguous aliases are not resolved by guessing which upstream is behind the gateway.
   return resolved.every((candidate) => profile(candidate) === profile(first)) ? first : undefined;

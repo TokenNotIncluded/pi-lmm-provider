@@ -93,6 +93,8 @@ export interface VerifiedCapabilities {
   input: ('text' | 'image')[];
   /** Explicit protocol flags, reviewed with the capability source. */
   compat: NonNullable<Model<LmmApi>['compat']>;
+  /** Public Pi catalog rates used only when LMM cannot express variable billing in ModelCost. */
+  referenceCost?: ModelCost;
   thinkingLevelMap?: Model<LmmApi>['thinkingLevelMap'];
   provenance: string;
 }
@@ -109,19 +111,21 @@ export function admitCatalog(catalog: Catalog, issuer: string, resolve: Capabili
   return catalog.models.map((entry) => {
     const capabilities = resolve(entry);
     if (!capabilities) return { entry, reason: 'Capability metadata unavailable; not registered in /model.' };
-    if (!entry.native_cost) return { entry, reason: 'No truthful native static cost; available for price inspection only.' };
+    const cost = entry.native_cost ?? capabilities.referenceCost;
+    if (!cost) return { entry, reason: 'No native or reference cost; available for price inspection only.' };
     requireValue(entry.apis.includes(capabilities.api) && Number.isSafeInteger(capabilities.contextWindow) && capabilities.contextWindow > 0 &&
       Number.isSafeInteger(capabilities.maxTokens) && capabilities.maxTokens > 0 && capabilities.maxTokens <= capabilities.contextWindow &&
       typeof capabilities.reasoning === 'boolean' && capabilities.input.length > 0 && capabilities.input.every((input) => input === 'text' || input === 'image'));
     text(capabilities.provenance);
     const multiplier = entry.pricing.group_multiplier === null ? 'unknown' : `${entry.pricing.group_multiplier}×`;
     const estimate = entry.pricing.price_basis === 'dynamic_estimate' ? ' · estimate' : '';
+    const variable = entry.native_cost ? '' : ' · LMM variable billing';
     const model: Model<LmmApi> = {
-      id: nativeModelId(entry), name: `${entry.group} / ${entry.upstream_model} · group ${multiplier}${estimate}`,
+      id: nativeModelId(entry), name: `${entry.group} / ${entry.upstream_model} · group ${multiplier}${estimate}${variable}`,
       provider: PROVIDER_ID, api: capabilities.api,
       baseUrl: capabilities.api === 'anthropic-messages' ? issuer : `${issuer}/v1`,
       reasoning: capabilities.reasoning, input: [...capabilities.input], contextWindow: capabilities.contextWindow,
-      maxTokens: capabilities.maxTokens, compat: structuredClone(capabilities.compat), cost: { ...entry.native_cost },
+      maxTokens: capabilities.maxTokens, compat: structuredClone(capabilities.compat), cost: structuredClone(cost),
       ...(capabilities.thinkingLevelMap ? { thinkingLevelMap: structuredClone(capabilities.thinkingLevelMap) } : {}),
     };
     return { entry, model };

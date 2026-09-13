@@ -145,14 +145,25 @@ test('Models host persists refresh and streams through the rebound provider auth
 });
 
 test('restores a session-bound catalog and retains it when a rotated-token refresh fails', async () => {
+  const referenceCost = {
+    input: 2, output: 8, cacheRead: 0.2, cacheWrite: 0,
+    tiers: [{ inputTokensAbove: 100000, input: 4, output: 12, cacheRead: 0.4, cacheWrite: 0 }],
+  };
   const capabilities = () => ({
     api: 'openai-completions' as const, contextWindow: 128000, maxTokens: 4096, reasoning: false,
-    input: ['text'] as ('text' | 'image')[], compat: {}, provenance: 'test fixture',
+    input: ['text'] as ('text' | 'image')[], compat: {}, referenceCost, provenance: 'test fixture',
   });
+  const variableCatalog = (resource: string) => {
+    const value = catalog(resource);
+    return { ...value, models: value.models.map((model) => ({
+      ...model, native_cost: null,
+      pricing: { ...model.pricing, unit: 'expression', price_basis: 'tiered_expression', input: null, output: null, cache_read: null, cache_write: null },
+    })) };
+  };
   let stored: Parameters<RefreshModelsContext['publish']>[0]['persist'];
   const source = new LmmIntegration({ issuer, capabilities, fetch: async (input) => {
     const url = String(input instanceof Request ? input.url : input);
-    if (url.endsWith('/catalog')) return new Response(JSON.stringify(catalog(`${issuer}/api/oauth2`)), { headers: { 'content-type': 'application/json' } });
+    if (url.endsWith('/catalog')) return new Response(JSON.stringify(variableCatalog(`${issuer}/api/oauth2`)), { headers: { 'content-type': 'application/json' } });
     if (url.endsWith('/balance')) return new Response(JSON.stringify({ schema_version: 1, currency: 'USD', balance: 1, quota: 1, quota_per_unit: 1, updated_at: 1789240000, authorization_limit: null }), { headers: { 'content-type': 'application/json' } });
     throw new Error('unexpected request');
   } });
@@ -162,6 +173,7 @@ test('restores a session-bound catalog and retains it when a rotated-token refre
       publish: async (publication) => { stored = publication.persist; publication.update?.(); return true; },
     });
     assert.ok(stored && stored.models.length === 1);
+    assert.equal(stored.models[0]!.cost.tiers?.[0]?.output, 12);
     assert.notEqual(stored.etag, 'session');
   } finally { source.dispose(); }
 
@@ -173,6 +185,7 @@ test('restores a session-bound catalog and retains it when a rotated-token refre
     });
     assert.equal(offline.provider.getModels().length, 1);
     assert.equal(offline.provider.getModels()[0]!.name, stored.models[0]!.name);
+    assert.equal(offline.provider.getModels()[0]!.cost.tiers?.[0]?.output, 12);
     assert.equal(offline.provider.filterModels!(offline.provider.getModels(), rotated).length, 1);
     await assert.rejects(offline.provider.refreshModels!({
       ...context(rotated, true), stored: stored ?? undefined,

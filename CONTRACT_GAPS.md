@@ -2,13 +2,13 @@
 
 ## Catalog capabilities
 
-Pi 0.85.1 model capability metadata is resolved from its complete installed official provider model directory by exact upstream model ID and the API advertised by the LMM catalog. Reviewed direct-vendor entries take precedence; the remaining official entries are accepted only when every exact-ID match agrees. Provider pricing is never reused and no cross-model fallback is permitted. Unknown IDs remain unknown and are not admitted to `/model`; the resolver does not infer capabilities from names.
+Pi 0.85.1 model capability metadata is resolved from its complete installed official provider model directory by exact upstream model ID and the API advertised by the LMM catalog. Reviewed direct-vendor entries take precedence; the remaining official entries are accepted only when every exact-ID match agrees. No cross-model fallback is permitted. Unknown IDs remain unknown and are not admitted to `/model`; the resolver does not infer capabilities from names.
 
 The last verified admitted models are cached for up to 24 hours using Pi's provider model store. The cache contains no bearer or refresh token, is bound to a hash of the issuer and OAuth session, is filtered against the current scopes, and is marked stale in status output. Live relay authorization remains server-side; a cached entry cannot bypass a removed group, model, or grant.
 
 ## Non-static pricing
 
-Pi 0.85.1 native cost fields cannot represent unknown, request-based, or expression pricing. Complete finite USD/million-token configured rates and current dynamic route estimates including configured cost floors can be registered; dynamic entries carry `dynamic_estimate`, a refresh timestamp and a non-locked-quote caveat. Null/request/expression prices are not replaced with zero, NaN, infinity, or invented maxima and remain inspection-only. No client budget-confirmation/expensive-group gate is planned.
+Pi 0.85.1 native cost fields cannot represent unknown or arbitrary expression pricing, but Pi requires finite numeric cost fields for every selectable model. Complete server-supplied USD/million-token rates remain authoritative. A variable-billing model with an exact official Pi catalog match is selectable using that catalog's public cost solely as a local UI estimate and is labelled `LMM variable billing`; LMM settlement remains authoritative. Unknown IDs and entries without either server cost or an exact reference remain inspection-only. No protected pricing endpoint, zero/NaN/infinity placeholder, cross-model price, or client budget-confirmation gate is used.
 
 ## Refresh rotation
 

@@ -22,6 +22,8 @@ pi install /absolute/path/to/pi-lmm-provider
 
 Then use `/login` and choose LMM in the native provider selector. Choose an admitted model with `/model`; `/lmm-prices` refreshes the account catalog and displays current pricing. `/lmm-revoke` requires interactive confirmation and revokes the server authorization. `/logout` clears the local Pi login.
 
+Models billed by a server-side expression remain selectable when Pi has an exact official model match. Their names include `LMM variable billing`; Pi's local cost display is only a public reference estimate, while LMM wallet settlement remains authoritative. The extension does not call the API-key-protected pricing endpoint.
+
 A successful package load or browser login alone is not a successful model-call test. Live OAuth, model invocation, refresh, cancellation, account switching, revocation and billing reconciliation still require acceptance.
 
 ## Development
