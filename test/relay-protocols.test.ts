@@ -5,6 +5,7 @@ import type { AssistantMessageEvent, ProviderAuthInteraction } from "@earendil-w
 import { LmmIntegration } from "../src/provider.ts";
 import { LmmHttp } from "../src/http.ts";
 import { LmmOAuth } from "../src/oauth.ts";
+import { INITIAL_SCOPES } from "../src/protocol.ts";
 
 const issuer = "https://api.lmm.best";
 const group = "ZGVmYXVsdA";
@@ -269,6 +270,7 @@ test(
     };
     const credentials = await oauth.login(interaction);
     assert.equal(credentials.access, "lmm_at_login_fixture");
+    assert.equal(authorization?.searchParams.get("scope"), INITIAL_SCOPES.join(" "));
     assert.ok(receipt);
     const response = await receipt;
     assert.equal(response.status, 200, response.text);

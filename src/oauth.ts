@@ -4,7 +4,7 @@ import { listenCallback } from './callback.ts';
 import type { LmmHttp } from './http.ts';
 import { RefreshJournal } from './refresh-journal.ts';
 import {
-  CLIENT_ID, INITIAL_SCOPES, LmmError, accessToken, boundedSignal, credential, nonnegative,
+  APPLICATION_SCOPES, CLIENT_ID, INITIAL_SCOPES, LmmError, accessToken, boundedSignal, credential, nonnegative,
   parseScope, requireValue, text, type LmmCredential,
 } from './protocol.ts';
 
@@ -82,7 +82,7 @@ export class LmmOAuth {
       requireValue([...scopes].every((entry) => oldScopes.has(entry)), 'LMM refresh tried to widen granted scope. Sign in again.');
       requireValue(refresh !== previous.refresh, 'LMM refresh did not rotate the refresh token. Sign in again.');
     } else {
-      requireValue(INITIAL_SCOPES.every((entry) => scopes.has(entry)), 'LMM did not grant the required application scopes.');
+      requireValue(APPLICATION_SCOPES.every((entry) => scopes.has(entry)), 'LMM did not grant the required application scopes.');
     }
     return {
       type: 'oauth', access, refresh, expires: startedAt + lifetime * 1000,

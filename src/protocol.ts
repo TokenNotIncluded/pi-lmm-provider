@@ -3,7 +3,9 @@ import type { OAuthCredential } from '@earendil-works/pi-ai';
 export const PROVIDER_ID = 'lmm';
 export const CLIENT_ID = 'lmm-pi';
 export const CALLBACK_PATH = '/oauth/lmm/callback';
-export const INITIAL_SCOPES = ['catalog:read', 'balance:read', 'models:invoke'] as const;
+export const APPLICATION_SCOPES = ['catalog:read', 'balance:read', 'models:invoke'] as const;
+export const MCP_SCOPES = ['mcp:bounties', 'mcp:drawing'] as const;
+export const INITIAL_SCOPES = [...APPLICATION_SCOPES, ...MCP_SCOPES] as const;
 export const SUPPORTED_APIS = ['openai-completions', 'openai-responses', 'anthropic-messages'] as const;
 export type LmmApi = (typeof SUPPORTED_APIS)[number];
 
