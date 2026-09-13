@@ -4,6 +4,8 @@ Alpha development preview for Pi 0.85.1. This package is not published to npm, a
 
 The extension registers LMM in Pi's native provider interface. It uses browser OAuth with a loopback callback and PKCE; it does not ask users to copy an API key. `/lmm-prices` refreshes the account-scoped catalog and shows pricing. Wallet status is labelled as platform credit, not spendable US dollars.
 
+Selectable models come from the account-scoped LMM catalog and exact capability matches in Pi's complete built-in model directory. The last verified model list is cached for up to 24 hours, bound to the OAuth login session, and visibly marked as cached when a catalog refresh is temporarily unavailable. The relay still validates every request against the live server-side account, group, and model policy.
+
 ## Install and use with Pi
 
 This package is not published to npm. Install the current development preview directly from GitHub:

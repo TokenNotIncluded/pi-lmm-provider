@@ -143,3 +143,68 @@ test('Models host persists refresh and streams through the rebound provider auth
     assert.equal(requestBody?.stream, true);
   } finally { integration.dispose(); await rm(directory, { recursive: true, force: true }); }
 });
+
+test('restores a session-bound catalog and retains it when a rotated-token refresh fails', async () => {
+  const capabilities = () => ({
+    api: 'openai-completions' as const, contextWindow: 128000, maxTokens: 4096, reasoning: false,
+    input: ['text'] as ('text' | 'image')[], compat: {}, provenance: 'test fixture',
+  });
+  let stored: Parameters<RefreshModelsContext['publish']>[0]['persist'];
+  const source = new LmmIntegration({ issuer, capabilities, fetch: async (input) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.endsWith('/catalog')) return new Response(JSON.stringify(catalog(`${issuer}/api/oauth2`)), { headers: { 'content-type': 'application/json' } });
+    if (url.endsWith('/balance')) return new Response(JSON.stringify({ schema_version: 1, currency: 'USD', balance: 1, quota: 1, quota_per_unit: 1, updated_at: 1789240000, authorization_limit: null }), { headers: { 'content-type': 'application/json' } });
+    throw new Error('unexpected request');
+  } });
+  try {
+    await source.provider.refreshModels!({
+      ...context(value('lmm_at_cache_old', 'refresh-old'), true),
+      publish: async (publication) => { stored = publication.persist; publication.update?.(); return true; },
+    });
+    assert.ok(stored && stored.models.length === 1);
+    assert.notEqual(stored.etag, 'session');
+  } finally { source.dispose(); }
+
+  const offline = new LmmIntegration({ issuer, capabilities, fetch: async () => { throw new Error('offline'); } });
+  const rotated = value('lmm_at_cache_new', 'refresh-new');
+  try {
+    await offline.provider.refreshModels!({
+      ...context(rotated, false), stored: stored ?? undefined,
+    });
+    assert.equal(offline.provider.getModels().length, 1);
+    assert.equal(offline.provider.getModels()[0]!.name, stored.models[0]!.name);
+    assert.equal(offline.provider.filterModels!(offline.provider.getModels(), rotated).length, 1);
+    await assert.rejects(offline.provider.refreshModels!({
+      ...context(rotated, true), stored: stored ?? undefined,
+    }));
+    assert.equal(offline.provider.filterModels!(offline.provider.getModels(), rotated).length, 1);
+  } finally { offline.dispose(); }
+
+  const otherAccount = new LmmIntegration({ issuer, capabilities, fetch: async () => { throw new Error('offline'); } });
+  try {
+    await otherAccount.provider.refreshModels!({
+      ...context({ ...rotated, lmm_session: 'other-session' }, false), stored: stored ?? undefined,
+    });
+    assert.equal(otherAccount.provider.getModels().length, 0);
+  } finally { otherAccount.dispose(); }
+});
+
+test('toAuth rebinds the last verified catalog when discovery is temporarily offline', async () => {
+  let online = true;
+  const integration = new LmmIntegration({ issuer, fetch: async (input) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (!online) throw new Error('offline');
+    if (url.endsWith('/catalog')) return new Response(JSON.stringify(catalog(`${issuer}/api/oauth2`)), { headers: { 'content-type': 'application/json' } });
+    if (url.endsWith('/balance')) return new Response(JSON.stringify({ schema_version: 1, currency: 'USD', balance: 1, quota: 1, quota_per_unit: 1, updated_at: 1789240000, authorization_limit: null }), { headers: { 'content-type': 'application/json' } });
+    throw new Error('unexpected request');
+  } });
+  const old = value('lmm_at_auth_old', 'refresh-old');
+  const rotated = value('lmm_at_auth_new', 'refresh-new');
+  try {
+    await integration.provider.refreshModels!(context(old, true));
+    online = false;
+    const auth = await integration.provider.auth.oauth!.toAuth(rotated);
+    assert.equal(auth.headers?.authorization, 'Bearer lmm_at_auth_new');
+    assert.equal(integration.provider.filterModels!(integration.provider.getModels(), rotated).length, 1);
+  } finally { integration.dispose(); }
+});

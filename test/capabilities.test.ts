@@ -37,3 +37,11 @@ test('known language models work over the gateway advertised OpenAI transport', 
   assert.equal(translated.compat.supportsStore, false);
   assert.equal(resolveKnownCapabilities(entry('gpt-image-2', ['openai-completions'])), undefined);
 });
+test('falls back to the complete official Pi catalog for exact model IDs', () => {
+  for (const id of ['qwen3.5-plus', 'MiniMax-M2.5', 'codestral-latest', 'llama-3.3-70b-versatile']) {
+    const result = resolveKnownCapabilities(entry(id, ['openai-completions']));
+    assert.ok(result, id);
+    assert.equal(result.api, 'openai-completions');
+    assert.ok(result.contextWindow > 0 && result.maxTokens > 0);
+  }
+});

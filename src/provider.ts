@@ -1,19 +1,63 @@
 import { createHash } from 'node:crypto';
-import type { Credential, Provider, RefreshModelsContext } from '@earendil-works/pi-ai';
+import type { Api, Credential, Model, ModelsStoreEntry, Provider, RefreshModelsContext } from '@earendil-works/pi-ai';
 import { balanceStatus, parseBalance, type Balance } from './balance.ts';
-import { admitCatalog, parseCatalog, priceReport, type Admission, type CapabilityResolver } from './catalog.ts';
+import {
+  admitCatalog, nativeModelId, parseCatalog, priceReport,
+  type Admission, type CapabilityResolver, type CatalogEntry, type Pricing,
+} from './catalog.ts';
 import { resolveKnownCapabilities } from './capabilities.ts';
 import { LmmHttp, type HttpOptions } from './http.ts';
 import { LmmOAuth } from './oauth.ts';
-import { PROVIDER_ID, LmmError, boundedSignal, credential, type LmmCredential } from './protocol.ts';
+import {
+  PROVIDER_ID, SUPPORTED_APIS, LmmError, base64url, boundedSignal, credential, text, type LmmApi, type LmmCredential,
+} from './protocol.ts';
 import { createRelay } from './stream.ts';
 
 function fingerprint(access: string): string { return createHash('sha256').update(access).digest('hex'); }
+const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const CACHE_FUTURE_SKEW_MS = 5 * 60 * 1000;
+
+function cacheTag(value: LmmCredential): string {
+  return `lmm-session-sha256:${createHash('sha256').update(`${value.lmm_issuer}\n${value.lmm_session}`).digest('hex')}`;
+}
+
+function decodeNativePart(value: string): string {
+  return value.replaceAll('%20%2F%20', ' / ').replaceAll('%25', '%');
+}
+
+function cachedEntry(model: Readonly<Model<Api>>, updatedAt: number): CatalogEntry | undefined {
+  try {
+    if (model.provider !== PROVIDER_ID || !(SUPPORTED_APIS as readonly string[]).includes(model.api)) return undefined;
+    const parts = model.id.split(' / ');
+    if (parts.length !== 2) return undefined;
+    const group = text(decodeNativePart(parts[0]!));
+    const upstream = text(decodeNativePart(parts[1]!), 512);
+    if (nativeModelId({ group, upstream_model: upstream }) !== model.id) return undefined;
+    const values = [model.cost.input, model.cost.output, model.cost.cacheRead, model.cost.cacheWrite];
+    if (!values.every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0)) return undefined;
+    const pricing: Pricing = {
+      currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates',
+      group_multiplier: null, trust_multiplier: null,
+      input: model.cost.input, output: model.cost.output, cache_read: model.cost.cacheRead, cache_write: model.cost.cacheWrite,
+      request: null, final_cost_depends_on_usage: true, updated_at: updatedAt,
+    };
+    const group_id = base64url(group);
+    return {
+      id: `lmm:${group_id}:${base64url(upstream)}`, group_id, group, upstream_model: upstream, name: `${group} / ${upstream}`,
+      apis: [model.api as LmmApi], pricing,
+      native_cost: { input: model.cost.input, output: model.cost.output, cacheRead: model.cost.cacheRead, cacheWrite: model.cost.cacheWrite },
+    };
+  } catch { return undefined; }
+}
+
 interface Snapshot {
   session: string;
   accessHash: string;
   expires: number;
   admissions: Admission[];
+  catalogUpdatedAt: number;
+  checkedAt: number;
+  catalogStale: boolean;
   balance?: Balance;
   balanceStale: boolean;
 }
@@ -110,17 +154,18 @@ export class LmmIntegration {
   private status(): void {
     if (!this.current) return this.notify(undefined);
     const admitted = this.current.admissions.filter((item) => item.model).length;
-    this.notify(`${balanceStatus(this.current.balance, this.current.balanceStale)}${admitted === 0 ? ' · models gated' : ''}`);
+    this.notify(`${balanceStatus(this.current.balance, this.current.balanceStale)}${this.current.catalogStale ? ' · cached models' : ''}${admitted === 0 ? ' · models gated' : ''}`);
   }
 
   private async fetchSnapshot(value: LmmCredential, signal: AbortSignal): Promise<Snapshot> {
     const scope = new Set(value.scope.split(' '));
     const snapshot: Snapshot = {
       session: value.lmm_session, accessHash: fingerprint(value.access), expires: value.expires,
-      admissions: [], balanceStale: false,
+      admissions: [], catalogUpdatedAt: 0, checkedAt: Date.now(), catalogStale: false, balanceStale: false,
     };
     const catalog = await this.http.bearer('/api/oauth2/catalog', value.access, signal);
     const parsed = parseCatalog(catalog, this.http.resource, value.scope);
+    snapshot.catalogUpdatedAt = parsed.updated_at;
     if (scope.has('models:invoke')) snapshot.admissions = admitCatalog(parsed, this.http.issuer, this.capabilities);
     else snapshot.admissions = parsed.models.map((entry) => ({ entry, reason: 'models:invoke was not granted; read-only.' }));
     if (scope.has('balance:read')) {
@@ -130,10 +175,52 @@ export class LmmIntegration {
     return snapshot;
   }
 
+  private cache(snapshot: Snapshot, value: LmmCredential): ModelsStoreEntry {
+    return {
+      models: snapshot.admissions.flatMap(({ model }) => model ? [structuredClone(model)] : []),
+      checkedAt: snapshot.checkedAt, lastModified: snapshot.catalogUpdatedAt * 1000, etag: cacheTag(value),
+    };
+  }
+
+  private restore(stored: Readonly<ModelsStoreEntry> | undefined, value: LmmCredential): Snapshot | undefined {
+    const checkedAt = stored?.checkedAt;
+    if (stored?.etag !== cacheTag(value) || typeof checkedAt !== 'number' || !Number.isFinite(checkedAt) ||
+        checkedAt > Date.now() + CACHE_FUTURE_SKEW_MS || Date.now() - checkedAt > CACHE_MAX_AGE_MS) return undefined;
+    const updatedAt = typeof stored.lastModified === 'number' && Number.isSafeInteger(stored.lastModified) && stored.lastModified >= 0
+      ? Math.floor(stored.lastModified / 1000) : Math.floor(checkedAt / 1000);
+    const entries = stored.models.map((model) => cachedEntry(model, updatedAt));
+    if (entries.some((entry) => !entry)) return undefined;
+    const complete = entries as CatalogEntry[];
+    const scope = new Set(value.scope.split(' '));
+    const admitted = complete.filter((entry) => scope.has(`group:${entry.group_id}`));
+    const admissions = scope.has('models:invoke')
+      ? admitCatalog({ schema_version: 1, resource: this.http.resource, updated_at: updatedAt, groups: [], models: admitted }, this.http.issuer, this.capabilities)
+      : [];
+    for (const admission of admissions) {
+      const cached = stored.models.find((model) => model.id === admission.model?.id);
+      if (admission.model && cached) admission.model.name = text(cached.name);
+    }
+    return {
+      session: value.lmm_session, accessHash: fingerprint(value.access), expires: value.expires,
+      admissions, catalogUpdatedAt: updatedAt, checkedAt, catalogStale: true, balanceStale: true,
+    };
+  }
+
+  private rebind(snapshot: Snapshot, value: LmmCredential): Snapshot {
+    const scope = new Set(value.scope.split(' '));
+    return {
+      ...snapshot, session: value.lmm_session, accessHash: fingerprint(value.access), expires: value.expires,
+      admissions: scope.has('models:invoke')
+        ? snapshot.admissions.filter(({ entry }) => scope.has(`group:${entry.group_id}`)) : [],
+      catalogStale: true, balance: undefined, balanceStale: true,
+    };
+  }
+
   private async refreshSnapshotForAuth(value: LmmCredential): Promise<void> {
     const hash = fingerprint(value.access);
     if (this.current?.session === value.lmm_session && this.current.accessHash === hash && this.current.expires > Date.now()) return;
     if (this.authSnapshotPending?.hash === hash) return this.authSnapshotPending.task;
+    const fallback = this.current?.session === value.lmm_session ? this.rebind(this.current, value) : undefined;
     const epoch = ++this.epoch;
     const task = (async () => {
       try {
@@ -143,7 +230,12 @@ export class LmmIntegration {
           this.pendingLogin = undefined;
           this.status();
         }
-      } catch { /* toAuth still returns the new bearer; lookup remains fail-closed. */ }
+      } catch {
+        if (fallback && epoch === this.epoch && !this.shutdown.signal.aborted) {
+          this.current = fallback;
+          this.status();
+        }
+      }
     })();
     this.authSnapshotPending = { hash, task };
     try { await task; } finally { if (this.authSnapshotPending?.task === task) this.authSnapshotPending = undefined; }
@@ -157,9 +249,10 @@ export class LmmIntegration {
     }
     if (!context.allowNetwork) {
       const hash = fingerprint(value.access);
-      const snapshot = this.pendingLogin?.session === value.lmm_session && this.pendingLogin.accessHash === hash ? this.pendingLogin :
-        this.current?.session === value.lmm_session && this.current.accessHash === hash ? this.current : undefined;
-      await context.publish({ persist: null, update: () => {
+      const matching = this.pendingLogin?.session === value.lmm_session && this.pendingLogin.accessHash === hash ? this.pendingLogin :
+        this.current?.session === value.lmm_session ? this.rebind(this.current, value) : undefined;
+      const snapshot = matching ?? this.restore(context.stored, value);
+      await context.publish({ persist: snapshot ? this.cache(snapshot, value) : null, update: () => {
         if (this.current?.session !== value.lmm_session) this.epoch++;
         this.current = snapshot;
         this.pendingLogin = undefined;
@@ -167,11 +260,20 @@ export class LmmIntegration {
       } });
       return;
     }
+    const fallback = this.current?.session === value.lmm_session
+      ? this.rebind(this.current, value) : this.restore(context.stored, value);
+    if (fallback) {
+      await context.publish({ update: () => {
+        this.current = fallback;
+        this.pendingLogin = undefined;
+        this.status();
+      } });
+    }
     const signal = AbortSignal.any([context.signal, this.shutdown.signal]);
     this.epoch++;
     const epoch = this.epoch;
     const snapshot = await this.fetchSnapshot(value, signal);
-    await context.publish({ persist: null, update: () => {
+    await context.publish({ persist: this.cache(snapshot, value), update: () => {
       if (epoch !== this.epoch || this.shutdown.signal.aborted) return;
       this.current = snapshot;
       this.pendingLogin = undefined;
