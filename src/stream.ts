@@ -14,19 +14,82 @@ const streams: Record<LmmApi, ProviderStreams> = {
   'anthropic-messages': anthropicMessagesApi(),
 };
 
+/** Maximum additional attempts for transient model transport failures. */
+export const MAX_MODEL_REQUEST_RETRIES = 5;
+const RETRY_BASE_DELAY_MS = 250;
+const RETRY_MAX_DELAY_MS = 8_000;
+
+function errorText(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object' && 'errorMessage' in error && typeof error.errorMessage === 'string') return error.errorMessage;
+  return '';
+}
+
+function errorStatus(error: unknown, message = errorText(error)): number | undefined {
+  if (error && typeof error === 'object') {
+    for (const key of ['status', 'statusCode']) {
+      const value = (error as Record<string, unknown>)[key];
+      if (typeof value === 'number' && Number.isInteger(value)) return value;
+    }
+  }
+  const match = message.match(/\b([45]\d{2})\b/);
+  return match ? Number(match[1]) : undefined;
+}
+
+function isTransportFailure(error: unknown): boolean {
+  const message = errorText(error);
+  const status = errorStatus(error, message);
+  if (status !== undefined) return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+  return /network|transport|disconnect|decod(?:e|ing)|response body|fetch failed|socket|timed out|stream ended before/i.test(message);
+}
+
+function publicErrorMessage(error: unknown, retries = 0, outputStarted = false): string {
+  const message = errorText(error);
+  if (/\babort(?:ed|ing)\b|cancel(?:led|ed)|request aborted/i.test(message)) return 'LMM request cancelled.';
+  const status = errorStatus(error, message);
+  if (status === 401) return 'LMM authorization expired or was revoked. Run /login again.';
+  if (status === 403) return 'This LMM account is not allowed to use the selected model. Run /login again or choose another model.';
+  if (status === 429) return 'LMM rate limit reached. Wait a moment and retry.';
+  if (status !== undefined && status >= 500) return `LMM upstream is temporarily unavailable (HTTP ${status}). Try again shortly.`;
+  if (isTransportFailure(error)) {
+    if (outputStarted) return 'LMM stream disconnected after output started. The partial request was not replayed to avoid duplicate billing; try again.';
+    return retries >= MAX_MODEL_REQUEST_RETRIES
+      ? `LMM stream disconnected before completion after ${MAX_MODEL_REQUEST_RETRIES} retries. Try again later.`
+      : 'LMM stream disconnected before completion. Retrying may succeed.';
+  }
+  return 'LMM model request failed. Check authorization, account access, and server availability.';
+}
+
+async function waitForRetry(delay: number, signal: AbortSignal | undefined): Promise<void> {
+  if (delay <= 0) return;
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, delay);
+    const abort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      reject(signal?.reason ?? new Error('aborted'));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
 export function bearerFromHeaders(headers: ProviderHeaders | undefined): string {
   const values = Object.entries(headers ?? {}).filter(([key]) => key.toLowerCase() === 'authorization').map(([, value]) => value);
   requireValue(values.length === 1 && typeof values[0] === 'string' && values[0].startsWith('Bearer '), 'LMM model requests require native OAuth authorization.');
   return accessToken(values[0].slice(7));
 }
 
-function errorMessage(model: Model<Api>, aborted: boolean): AssistantMessage {
+function errorMessage(model: Model<Api>, aborted: boolean, error?: unknown, retries = 0, outputStarted = false): AssistantMessage {
   return {
     role: 'assistant', content: [], api: model.api, provider: PROVIDER_ID, model: model.id,
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
     stopReason: aborted ? 'aborted' : 'error',
-    errorMessage: aborted ? 'LMM request cancelled.' : 'LMM model request failed. Check authorization, catalog eligibility, and server availability.',
+    errorMessage: aborted ? 'LMM request cancelled.' : publicErrorMessage(error, retries, outputStarted),
     timestamp: Date.now(),
   };
 }
@@ -35,7 +98,7 @@ function rebind(message: AssistantMessage, model: Model<Api>): AssistantMessage 
   const result = { ...message, provider: PROVIDER_ID, model: model.id, api: model.api };
   // Upstream errors can echo headers / credentials. Never print raw provider errors.
   if (result.stopReason === 'error' || result.stopReason === 'aborted') {
-    result.errorMessage = result.stopReason === 'aborted' ? 'LMM request cancelled.' : 'LMM model request failed. Check authorization and server availability.';
+    result.errorMessage = result.stopReason === 'aborted' ? 'LMM request cancelled.' : publicErrorMessage(result.errorMessage);
   }
   return result;
 }
@@ -58,6 +121,8 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks): ProviderStreams {
     void (async () => {
       let access: string | undefined;
       let sent = false;
+      let attempt = 0;
+      let streamStarted = false;
       try {
         requireValue(options.apiKey === undefined, 'An API key must not be combined with LMM OAuth.');
         access = bearerFromHeaders(options.headers);
@@ -98,7 +163,7 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks): ProviderStreams {
         const wireOptions: ProviderStreamOptions = {
           ...options, apiKey: undefined, headers, env: {}, fetch: guardedFetch,
           maxTokens: options.maxTokens ?? model.maxTokens,
-          // Do not auto-retry a billable request; host retries are a separate user-visible decision.
+          // The relay owns retries so the SDK cannot replay a billable request.
           maxRetries: 0,
           onPayload: async (payload, payloadModel) => {
             const replacement = await originalOnPayload?.(payload, payloadModel);
@@ -110,11 +175,50 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks): ProviderStreams {
           messages: context.messages.map((message) => message.role === 'assistant' && message.provider === PROVIDER_ID && message.model === selected.id
             ? { ...message, model: entry.upstream_model } : message),
         };
-        const source = simple ? streams[api].streamSimple(wire, wireContext, wireOptions) : streams[api].stream(wire, wireContext, wireOptions);
-        for await (const event of source) output.push(rebindEvent(event, selected));
-        output.end(rebind(await source.result(), selected));
+        // A provider stream can fail after fetch() has returned, while its
+        // response body is being decoded. Retry only if Pi has not received a
+        // generation-start event yet; replaying after that point can duplicate
+        // billable output. The source emits request failures as an `error`
+        // event, so inspect it here instead of relying on a thrown exception.
+        while (true) {
+          const source = simple ? streams[api].streamSimple(wire, wireContext, wireOptions) : streams[api].stream(wire, wireContext, wireOptions);
+          let retry = false;
+          try {
+            for await (const event of source) {
+              if (event.type === 'start' || (event.type !== 'error' && event.type !== 'done')) streamStarted = true;
+              if (event.type === 'error') {
+                // Classify the provider's original error before rebind() removes
+                // its raw message from the user-visible event.
+                const shouldRetry = !streamStarted && isTransportFailure(event.error) && attempt < MAX_MODEL_REQUEST_RETRIES;
+                const error = rebind(event.error, selected);
+                if (shouldRetry) {
+                  attempt += 1;
+                  await waitForRetry(Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)), options.signal);
+                  retry = true;
+                  break;
+                }
+                error.errorMessage = publicErrorMessage(event.error, attempt, streamStarted);
+                output.push({ ...event, error });
+                output.end(error);
+                return;
+              }
+              output.push(rebindEvent(event, selected));
+            }
+          } catch (error) {
+            if (!streamStarted && isTransportFailure(error) && attempt < MAX_MODEL_REQUEST_RETRIES) {
+              attempt += 1;
+              await waitForRetry(Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)), options.signal);
+              retry = true;
+            } else {
+              throw error;
+            }
+          }
+          if (retry) continue;
+          output.end(rebind(await source.result(), selected));
+          break;
+        }
       } catch (error) {
-        const message = errorMessage(selected, options.signal?.aborted === true);
+        const message = errorMessage(selected, options.signal?.aborted === true, error, attempt, streamStarted);
         if (error instanceof LmmError) message.errorMessage = error.message;
         output.push({ type: 'error', reason: options.signal?.aborted ? 'aborted' : 'error', error: message });
         output.end(message);

@@ -8,7 +8,7 @@ import { LmmIntegration } from '../src/provider.ts';
 
 const issuer = 'https://api.lmm.best';
 const groupId = 'ZGVmYXVsdA';
-const scope = `catalog:read balance:read models:invoke group:${groupId}`;
+const scope = `catalog:read balance:read usage:read models:invoke group:${groupId}`;
 const modelId = `lmm:${groupId}:Z3B0LTRvLW1pbmk`;
 const catalog = (resource: string) => ({ schema_version: 1, resource, updated_at: 1789240000,
   groups: [{ id: groupId, name: 'default', scope: `group:${groupId}`, multiplier: 1 }],

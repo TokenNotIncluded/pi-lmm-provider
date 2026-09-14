@@ -8,7 +8,7 @@ import { LmmHttp } from '../src/http.ts';
 import { LmmOAuth } from '../src/oauth.ts';
 import type { LmmCredential } from '../src/protocol.ts';
 
-const scope = 'catalog:read balance:read models:invoke';
+const scope = 'catalog:read balance:read usage:read models:invoke';
 function credential(refresh: string): LmmCredential {
   return { type: 'oauth', access: 'lmm_at_old', refresh, expires: Date.now() - 1,
     lmm_issuer: 'http://127.0.0.1:0', lmm_resource: 'http://127.0.0.1:0/api/oauth2', lmm_session: 'session', scope };

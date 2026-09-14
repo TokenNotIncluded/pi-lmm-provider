@@ -61,6 +61,12 @@ export class LmmHttp {
             "LMM authorization is unavailable or was revoked. Use /login; no API-key fallback is allowed.",
           );
         }
+        if (response.status === 429) {
+          throw new LmmError("rate_limited", "LMM rate limit reached. Wait a moment and retry.");
+        }
+        if (response.status >= 500) {
+          throw new LmmError("upstream_unavailable", `LMM service is temporarily unavailable (HTTP ${response.status}). Try again shortly.`);
+        }
         throw new LmmError(
           "http_error",
           `LMM HTTP request failed (${response.status}).`,
@@ -101,7 +107,7 @@ export class LmmHttp {
         throw new LmmError("aborted", "LMM request cancelled or timed out.");
       throw new LmmError(
         "transport_error",
-        "LMM request failed; no automatic token-exchange retry was attempted.",
+        "LMM network request failed. Check your connection and retry.",
       );
     }
   }

@@ -74,6 +74,10 @@ export interface LmmProviderOptions extends HttpOptions {
   loginTimeoutMs?: number;
   refreshJournalDirectory?: string;
   onStatus?: (status: string | undefined) => void;
+  /** Registered public OAuth client identity for the embedding native host. */
+  clientId?: string;
+  /** Short user-facing host name used only in login and callback instructions. */
+  hostName?: string;
 }
 
 export class LmmIntegration {
@@ -92,7 +96,13 @@ export class LmmIntegration {
 
   constructor(options: LmmProviderOptions = {}) {
     this.http = new LmmHttp(options);
-    this.oauth = new LmmOAuth(this.http, options.loginTimeoutMs, options.refreshJournalDirectory);
+    this.oauth = new LmmOAuth(
+      this.http,
+      options.loginTimeoutMs,
+      options.refreshJournalDirectory,
+      options.clientId,
+      options.hostName,
+    );
     this.capabilities = options.capabilities ?? resolveKnownCapabilities;
     this.notify = options.onStatus ?? (() => {});
     const relay = createRelay(this.http, {
@@ -117,7 +127,7 @@ export class LmmIntegration {
               // Retain a valid login even if read-only discovery is temporarily unavailable.
               interaction.notify({ type: 'progress', message: 'LMM login succeeded, but its catalog or balance is unavailable. Use /lmm-prices to retry discovery; unknown models are not registered.' });
             }
-            interaction.notify({ type: 'progress', message: 'LMM uses native /model. Entries without verified capabilities or truthful native pricing remain read-only. Automatic refresh is fenced by a durable local journal; /logout is local only.' });
+            interaction.notify({ type: 'progress', message: `LMM uses ${options.hostName ?? 'Pi'}'s native model selector. Entries without verified capabilities or truthful native pricing remain read-only. Automatic refresh is fenced by a durable local journal; signing out is local only.` });
             return issued;
           },
           refresh: async (value, signal) => this.oauth.refresh(value, AbortSignal.any([signal, this.shutdown.signal])),

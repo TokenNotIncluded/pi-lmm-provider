@@ -9,7 +9,7 @@ import { INITIAL_SCOPES } from "../src/protocol.ts";
 
 const issuer = "https://api.lmm.best";
 const group = "ZGVmYXVsdA";
-const scope = `catalog:read balance:read models:invoke group:${group}`;
+const scope = `catalog:read balance:read usage:read models:invoke group:${group}`;
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
 const sse = (events: { type: string; [key: string]: unknown }[]) =>
@@ -44,6 +44,7 @@ for (const protocol of ["openai-responses", "anthropic-messages"] as const) {
         finish = resolve;
       });
       let sent = false;
+      let modelAttempts = 0;
       const requestFetch: typeof fetch = async (input, init) => {
         const url = input instanceof Request ? input.url : String(input);
         if (url.endsWith("/catalog"))
@@ -94,6 +95,8 @@ for (const protocol of ["openai-responses", "anthropic-messages"] as const) {
           url,
           issuer + (protocol === "openai-responses" ? "/v1/responses" : "/v1/messages"),
         );
+        modelAttempts += 1;
+        if (modelAttempts <= 5) return new Response(null, { status: 503, headers: { "retry-after": "0" } });
         const headers = new Headers(
           init?.headers ?? (input instanceof Request ? input.headers : undefined),
         );
@@ -200,6 +203,7 @@ for (const protocol of ["openai-responses", "anthropic-messages"] as const) {
         );
         assert.ok(events.some((e) => e.type === "text_delta"));
         assert.equal(sent, true);
+        assert.equal(modelAttempts, 6, "a transient model failure should allow five retries");
         await balanceRefreshed;
       } finally {
         integration.dispose();

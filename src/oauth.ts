@@ -14,11 +14,23 @@ export class LmmOAuth {
   readonly http: LmmHttp;
   readonly loginTimeoutMs: number;
   readonly refreshJournal?: RefreshJournal;
+  readonly clientId: string;
+  readonly hostName: string;
 
-  constructor(http: LmmHttp, loginTimeoutMs = 180_000, refreshJournalDirectory?: string) {
+  constructor(
+    http: LmmHttp,
+    loginTimeoutMs = 180_000,
+    refreshJournalDirectory?: string,
+    clientId = CLIENT_ID,
+    hostName = 'Pi',
+  ) {
     this.http = http;
     this.loginTimeoutMs = loginTimeoutMs;
     this.refreshJournal = refreshJournalDirectory === undefined ? undefined : new RefreshJournal(refreshJournalDirectory);
+    requireValue(/^[a-z0-9][a-z0-9-]{0,63}$/.test(clientId), 'Invalid LMM OAuth client identifier.');
+    requireValue(/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/.test(hostName), 'Invalid LMM OAuth host name.');
+    this.clientId = clientId;
+    this.hostName = hostName;
   }
 
   async discover(signal: AbortSignal): Promise<void> {
@@ -40,31 +52,39 @@ export class LmmOAuth {
 
   async login(interaction: ProviderAuthInteraction): Promise<LmmCredential> {
     const signal = boundedSignal(interaction.signal, this.loginTimeoutMs);
-    await this.discover(signal);
-    const verifier = randomBytes(32).toString('base64url');
-    const state = randomBytes(32).toString('base64url');
-    const challenge = createHash('sha256').update(verifier).digest('base64url');
-    const callback = await listenCallback(this.http.issuer, state, signal);
+    let callback: Awaited<ReturnType<typeof listenCallback>> | undefined;
     try {
+      await this.discover(signal);
+      const verifier = randomBytes(32).toString('base64url');
+      const state = randomBytes(32).toString('base64url');
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      callback = await listenCallback(this.http.issuer, state, signal, this.hostName);
       const url = new URL(`${this.http.resource}/authorize`);
       url.search = new URLSearchParams({
-        client_id: CLIENT_ID, response_type: 'code', redirect_uri: callback.redirectUri,
+        client_id: this.clientId, response_type: 'code', redirect_uri: callback.redirectUri,
         scope: INITIAL_SCOPES.join(' '), resource: this.http.resource,
         code_challenge: challenge, code_challenge_method: 'S256', state,
       }).toString();
       // Pi's native OAuth UI owns opening the browser. The listener is already bound.
-      interaction.notify({ type: 'auth_url', url: url.href, instructions: 'Sign in and approve LMM in your browser, then return to Pi. Cancel in Pi to stop waiting.' });
+      interaction.notify({ type: 'auth_url', url: url.href, instructions: `Sign in and approve LMM in your browser, then return to ${this.hostName}. Cancel in ${this.hostName} to stop waiting.` });
       const code = await callback.code;
+      const redirectUri = callback.redirectUri;
       callback.close();
+      callback = undefined;
       signal.throwIfAborted();
       const startedAt = Date.now();
       const response = await this.http.form('/api/oauth2/token', {
-        grant_type: 'authorization_code', client_id: CLIENT_ID, code,
-        redirect_uri: callback.redirectUri, code_verifier: verifier, resource: this.http.resource,
+        grant_type: 'authorization_code', client_id: this.clientId, code,
+        redirect_uri: redirectUri, code_verifier: verifier, resource: this.http.resource,
       }, signal);
       return this.parseToken(response, startedAt);
+    } catch (error) {
+      if (signal.aborted || (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'))) {
+        throw new LmmError('aborted', 'LMM login cancelled or timed out. Start /login again.');
+      }
+      throw error;
     } finally {
-      callback.close();
+      callback?.close();
     }
   }
 
@@ -110,7 +130,7 @@ export class LmmOAuth {
     const current = credential(value, this.http.issuer);
     const startedAt = Date.now();
     const response = await this.http.form('/api/oauth2/token', {
-      grant_type: 'refresh_token', client_id: CLIENT_ID, refresh_token: current.refresh, resource: this.http.resource,
+      grant_type: 'refresh_token', client_id: this.clientId, refresh_token: current.refresh, resource: this.http.resource,
     }, signal);
     return this.parseToken(response, startedAt, current);
   }
@@ -118,7 +138,7 @@ export class LmmOAuth {
   /** Access-token revocation invalidates the whole family in the fixed LMM profile. No refresh is attempted. */
   async revoke(access: string, signal: AbortSignal): Promise<void> {
     await this.http.form('/api/oauth2/revoke', {
-      client_id: CLIENT_ID, token: accessToken(access), token_type_hint: 'access_token',
+      client_id: this.clientId, token: accessToken(access), token_type_hint: 'access_token',
     }, signal);
   }
 }

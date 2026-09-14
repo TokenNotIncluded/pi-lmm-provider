@@ -20,7 +20,7 @@ function reply(response: ServerResponse, status: number, message: string): void 
 }
 
 /** Bind before returning a redirect URI. Invalid/error callbacks never settle the login. */
-export async function listenCallback(issuer: string, state: string, signal: AbortSignal): Promise<{
+export async function listenCallback(issuer: string, state: string, signal: AbortSignal, hostName = 'Pi'): Promise<{
   redirectUri: string;
   code: Promise<string>;
   close(): void;
@@ -36,7 +36,7 @@ export async function listenCallback(issuer: string, state: string, signal: Abor
   const server = createServer({ maxHeaderSize: 8192 }, (request: IncomingMessage, response) => {
     if (settled || request.method !== 'GET' || request.headers.host !== authority ||
         request.socket.remoteAddress !== '127.0.0.1' || request.url?.split('?')[0] !== CALLBACK_PATH) {
-      reply(response, 400, 'Invalid OAuth callback. Return to Pi to cancel or retry.');
+      reply(response, 400, `Invalid OAuth callback. Return to ${hostName} to cancel or retry.`);
       return;
     }
     const url = new URL(request.url, `http://${authority}`);
@@ -54,16 +54,16 @@ export async function listenCallback(issuer: string, state: string, signal: Abor
       /^[A-Za-z0-9._~-]{1,256}$/.test(params.get('error') ?? '');
     if (hasError && errorValid && !params.has('code')) {
       settled = true;
-      reply(response, 200, 'Authorization was not granted. Return to Pi.');
+      reply(response, 200, `Authorization was not granted. Return to ${hostName}.`);
       reject(new LmmError('oauth_denied', 'LMM authorization was denied.'));
       return;
     }
     if (!valid || returnedCode === null || !/^[A-Za-z0-9._~-]{1,4096}$/.test(returnedCode)) {
-      reply(response, 400, 'Unverified OAuth callback. The login is still waiting in Pi.');
+      reply(response, 400, `Unverified OAuth callback. The login is still waiting in ${hostName}.`);
       return;
     }
     settled = true;
-    reply(response, 200, 'Authorization received. Return to Pi to finish signing in.');
+    reply(response, 200, `Authorization received. Return to ${hostName} to finish signing in.`);
     accept(returnedCode);
   });
   server.requestTimeout = 5000;
