@@ -20,7 +20,9 @@ const fallbackSources: readonly Source[] = getBuiltinProviders()
   .map((provider) => [provider, new Map(getBuiltinModels(provider).map((model) => [model.id, model]))]);
 
 function gatewayCompat(entry: Parameters<CapabilityResolver>[0], compat: NonNullable<Model<Api>['compat']>) {
-  if (entry.group === '国产[Kimi/Deepseek/GLM]' && (entry.upstream_model === 'glm-5.3' || entry.upstream_model === 'glm-5.3-flash')) {
+  const domesticGroup = entry.group === '国产[Kimi/Deepseek/GLM]';
+  const deepSeekV4 = /^deepseek-v4-(?:flash|pro)(?:-.+)?$/.test(entry.upstream_model);
+  if (domesticGroup && (deepSeekV4 || entry.upstream_model === 'glm-5.3' || entry.upstream_model === 'glm-5.3-flash')) {
     return {
       ...compat,
       supportsLongCacheRetention: true,
@@ -42,16 +44,21 @@ function candidates(entry: Parameters<CapabilityResolver>[0], sources: readonly 
     // still requires an exact Pi catalog model, never a name-based approximation.
     if (!nativeProtocol && (!entry.apis.includes('openai-completions') ||
       !LANGUAGE_APIS.includes(model.api))) continue;
+    // LMM's OpenAI-compatible gateway translates the request to the vendor
+    // protocol upstream. Preserve the vendor's reasoning metadata even when
+    // the wire protocol differs; otherwise Pi hides every thinking level and
+    // never sends reasoning_effort for models such as GPT-6 Astra.
     const compat = gatewayCompat(entry, nativeProtocol ? structuredClone(model.compat ?? {}) : {
-      supportsDeveloperRole: false, supportsStore: false, supportsReasoningEffort: false,
+      supportsDeveloperRole: false, supportsStore: false,
+      supportsReasoningEffort: model.reasoning,
       maxTokensField: provider === 'openai' ? 'max_completion_tokens' as const : 'max_tokens' as const,
     });
     // A vendor fallback may use a different model and price not authorized by this catalog entry.
     if ('allowedFallbackModels' in compat) delete compat.allowedFallbackModels;
     result.push({
       api: nativeProtocol ? model.api as LmmApi : 'openai-completions', contextWindow: model.contextWindow, maxTokens: model.maxTokens,
-      reasoning: nativeProtocol && model.reasoning, input: [...model.input], compat, referenceCost: structuredClone(model.cost),
-      thinkingLevelMap: nativeProtocol && model.thinkingLevelMap ? structuredClone(model.thinkingLevelMap) : undefined,
+      reasoning: model.reasoning, input: [...model.input], compat, referenceCost: structuredClone(model.cost),
+      thinkingLevelMap: model.thinkingLevelMap ? structuredClone(model.thinkingLevelMap) : undefined,
       provenance: `pi-ai vendor catalog: ${provider}/${model.id}${nativeProtocol ? '' : '; server-advertised OpenAI-compatible transport'}`,
     });
   }

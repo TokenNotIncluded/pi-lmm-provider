@@ -50,6 +50,12 @@ The extension also provides these commands:
 
 Selectable models come from the account-specific LMM catalog and exact capability matches in Pi's built-in model directory. The last verified model list is cached for up to 24 hours and bound to the OAuth login session. The relay still validates every request against the live server-side account, group, and model policy.
 
+For models advertised by LMM as `openai-completions`, the plugin still uses the exact Pi catalog entry for the upstream model. This is important for models whose native Pi adapter is different, such as Astra (Responses), Claude (Anthropic), or Gemini (Google): their `reasoning`, supported thinking levels, context window, and output limit are preserved while LMM translates the OpenAI-compatible request upstream. Non-thinking models remain non-thinking. The model's map may intentionally remove levels that the upstream does not support, so Pi can clamp the global default to the nearest valid level.
+
+After upgrading from an older alpha, restart Pi and run `/model` or `/lmm-prices` once. The provider rebuilds the session-bound cache from the current Pi catalog; it does not trust stale `reasoning:false` metadata from an older plugin.
+
+For the domestic DeepSeek V4 and reviewed GLM 5.3 entries, the provider also enables long prompt-cache retention and session-affinity headers. This keeps repeated turns on the same upstream worker and avoids the `pi-cache-optimizer` warning about missing DeepSeek compatibility metadata.
+
 Models using server-side variable billing remain selectable when Pi has an exact official model match. Their names include `LMM variable billing`. Pi shows a public reference estimate, while the LMM wallet settlement is authoritative. Wallet values are platform credit, not spendable US dollars.
 
 ## Preview status

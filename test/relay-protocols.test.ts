@@ -212,6 +212,99 @@ for (const protocol of ["openai-responses", "anthropic-messages"] as const) {
   );
 }
 
+test("OpenAI-compatible gateway models forward the selected reasoning level", { timeout: 15000 }, async () => {
+  const modelName = "gpt-6-astra";
+  const id = `lmm:${group}:${Buffer.from(modelName).toString("base64url")}`;
+  let requestBody: Record<string, unknown> | undefined;
+  const requestFetch: typeof fetch = async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url.endsWith("/catalog")) {
+      return json({
+        schema_version: 1,
+        resource: `${issuer}/api/oauth2`,
+        updated_at: 1789240000,
+        groups: [{ id: group, name: "default", scope: `group:${group}`, multiplier: 1 }],
+        models: [{
+          id,
+          group_id: group,
+          group: "default",
+          upstream_model: modelName,
+          name: modelName,
+          apis: ["openai-completions"],
+          pricing: {
+            currency: "USD",
+            unit: "million_tokens",
+            price_basis: "configured_base_rates",
+            group_multiplier: 1,
+            trust_multiplier: 1,
+            input: 1,
+            output: 2,
+            cache_read: 0.25,
+            cache_write: 1.25,
+            request: null,
+            final_cost_depends_on_usage: true,
+            updated_at: 1789240000,
+          },
+          native_cost: { input: 1, output: 2, cacheRead: 0.25, cacheWrite: 1.25 },
+        }],
+      });
+    }
+    if (url.endsWith("/balance")) {
+      return json({
+        schema_version: 1,
+        currency: "platform_credit",
+        balance: 1,
+        quota: 500000,
+        quota_per_unit: 500000,
+        updated_at: 1789240000,
+        authorization_limit: null,
+      });
+    }
+    assert.equal(url, `${issuer}/v1/chat/completions`);
+    const rawBody = input instanceof Request ? await input.text() : String(init?.body);
+    const body = JSON.parse(rawBody) as Record<string, unknown>;
+    requestBody = body;
+    assert.equal(body.model, modelName);
+    assert.equal(body.reasoning_effort, "high");
+    return new Response(
+      [
+        { id: "chat_1", choices: [{ delta: { role: "assistant", content: "ok" }, index: 0, finish_reason: null }] },
+        { id: "chat_1", choices: [{ delta: {}, index: 0, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } },
+      ].map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n",
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  };
+  const integration = new LmmIntegration({ fetch: requestFetch });
+  try {
+    const auth = await integration.provider.auth.oauth!.toAuth({
+      type: "oauth",
+      access: "lmm_at_gateway_fixture",
+      refresh: "fixture_refresh",
+      expires: Date.now() + 60000,
+      lmm_issuer: issuer,
+      lmm_resource: `${issuer}/api/oauth2`,
+      lmm_session: "gateway-session",
+      scope,
+    });
+    const selected = integration.provider.getModels().find((m) => m.id === `default / ${modelName}`);
+    assert.ok(selected);
+    const events: AssistantMessageEvent[] = [];
+    for await (const event of integration.provider.streamSimple!(
+      selected,
+      { messages: [{ role: "user", content: "hello", timestamp: Date.now() }] },
+      { headers: auth.headers, reasoning: "high" },
+    )) events.push(event);
+    const done = events.find((event) => event.type === "done");
+    assert.ok(done?.type === "done", JSON.stringify(events));
+    assert.equal(done.message.stopReason, "stop");
+    assert.ok(requestBody);
+    const sentBody = requestBody;
+    assert.equal(sentBody.reasoning_effort, "high");
+  } finally {
+    integration.dispose();
+  }
+});
+
 test(
   "OAuth login completes a real loopback callback and verifies PKCE exchange",
   { timeout: 15000 },
