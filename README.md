@@ -48,6 +48,8 @@ The extension also provides these commands:
 - `/lmm-revoke` revokes the server authorization after interactive confirmation.
 - `/logout` removes the local Pi login.
 
+Current alpha releases request the LMM application scopes `catalog:read balance:read usage:read models:invoke` plus the built-in `mcp:bounties` and `mcp:drawing` scopes. Older alpha installations may have an authorization created before one or more of those scopes existed. The server preserves those historical grants without silently adding permissions the installed client did not request. After updating the provider, run `/login` again if you need a newly introduced protected resource such as usage activity or a built-in MCP endpoint.
+
 Selectable models come from the account-specific LMM catalog and exact capability matches in Pi's built-in model directory. The last verified model list is cached for up to 24 hours and bound to the OAuth login session. The relay still validates every request against the live server-side account, group, and model policy.
 
 For models advertised by LMM as `openai-completions`, the plugin still uses the exact Pi catalog entry for the upstream model. This is important for models whose native Pi adapter is different, such as Astra (Responses), Claude (Anthropic), or Gemini (Google): their `reasoning`, supported thinking levels, context window, and output limit are preserved while LMM translates the OpenAI-compatible request upstream. Non-thinking models remain non-thinking. The model's map may intentionally remove levels that the upstream does not support, so Pi can clamp the global default to the nearest valid level.
