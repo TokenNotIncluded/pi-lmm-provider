@@ -15,8 +15,8 @@ const catalog = (resource: string) => ({ schema_version: 1, resource, updated_at
   models: [{ id: modelId, group_id: groupId, group: 'default', upstream_model: 'gpt-4o-mini', name: 'default / gpt-4o-mini', apis: ['openai-completions'],
     pricing: { currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates', group_multiplier: 1, trust_multiplier: 1, input: 1, output: 2, cache_read: 0, cache_write: 0, request: null, final_cost_depends_on_usage: true, updated_at: 1789240000 },
     native_cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } }], });
-function value(access: string, refresh: string): OAuthCredential { return { type: 'oauth', access, refresh, expires: Date.now() + 60_000,
-  lmm_issuer: issuer, lmm_resource: `${issuer}/api/oauth2`, lmm_session: 'session', scope }; }
+function value(access: string, refresh: string, session = 'session'): OAuthCredential { return { type: 'oauth', access, refresh, expires: Date.now() + 60_000,
+  lmm_issuer: issuer, lmm_resource: `${issuer}/api/oauth2`, lmm_session: session, scope }; }
 function context(credential: Credential | undefined, allowNetwork: boolean, publish = async (p: { update?: () => void }) => { p.update?.(); return true; }): RefreshModelsContext {
   return { credential, allowNetwork, signal: new AbortController().signal, publish };
 }
@@ -96,6 +96,55 @@ test('a late old-account snapshot cannot replace a newer account', async () => {
     releaseOld();
     await old;
     assert.equal(integration.provider.getModels().length, 1);
+  } finally { integration.dispose(); }
+});
+
+test('revoke rejects a mismatched account without contacting the server, and toAuth denies the revoked session', async () => {
+  let revokeCalls = 0;
+  const fetch: typeof globalThis.fetch = async (input) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.endsWith('/catalog')) return new Response(JSON.stringify(catalog(`${issuer}/api/oauth2`)), { headers: { 'content-type': 'application/json' } });
+    if (url.endsWith('/balance')) return new Response(JSON.stringify({ schema_version: 1, currency: 'USD', balance: 1, quota: 1, quota_per_unit: 1, updated_at: 1789240000, authorization_limit: null }), { headers: { 'content-type': 'application/json' } });
+    if (url.endsWith('/revoke')) { revokeCalls += 1; return new Response(null, { status: 200 }); }
+    throw new Error('unexpected request');
+  };
+  const integration = new LmmIntegration({ issuer, fetch });
+  try {
+    await integration.provider.refreshModels!(context(value('lmm_at_revoke', 'refresh-revoke', 'revoke-session'), true));
+    await assert.rejects(integration.revoke('lmm_at_wrong_account', new AbortController().signal), { code: 'account_changed' });
+    assert.equal(revokeCalls, 0);
+    await integration.revoke('lmm_at_revoke', new AbortController().signal);
+    assert.equal(revokeCalls, 1);
+    assert.equal(integration.provider.getModels().length, 0);
+    await assert.rejects(
+      integration.provider.auth.oauth!.toAuth(value('lmm_at_revoke', 'refresh-revoke', 'revoke-session')),
+      { code: 'revoked' },
+    );
+  } finally { integration.dispose(); }
+});
+
+test('a stale revocation of a replaced account does not clear the newer session', async () => {
+  let releaseRevoke!: () => void;
+  const revokePaused = new Promise<void>((resolve) => { releaseRevoke = resolve; });
+  const fetch: typeof globalThis.fetch = async (input) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.endsWith('/catalog')) return new Response(JSON.stringify(catalog(`${issuer}/api/oauth2`)), { headers: { 'content-type': 'application/json' } });
+    if (url.endsWith('/balance')) return new Response(JSON.stringify({ schema_version: 1, currency: 'USD', balance: 1, quota: 1, quota_per_unit: 1, updated_at: 1789240000, authorization_limit: null }), { headers: { 'content-type': 'application/json' } });
+    if (url.endsWith('/revoke')) { await revokePaused; return new Response(null, { status: 200 }); }
+    throw new Error('unexpected request');
+  };
+  const integration = new LmmIntegration({ issuer, fetch });
+  try {
+    await integration.provider.refreshModels!(context(value('lmm_at_switch_old', 'refresh-switch-old', 'switch-old'), true));
+    const revoking = integration.revoke('lmm_at_switch_old', new AbortController().signal);
+    await integration.provider.refreshModels!(context(value('lmm_at_switch_new', 'refresh-switch-new', 'switch-new'), true));
+    releaseRevoke();
+    await revoking;
+    assert.equal(integration.provider.getModels().length, 1);
+    await assert.rejects(
+      integration.provider.auth.oauth!.toAuth(value('lmm_at_switch_old', 'refresh-switch-old', 'switch-old')),
+      { code: 'revoked' },
+    );
   } finally { integration.dispose(); }
 });
 
