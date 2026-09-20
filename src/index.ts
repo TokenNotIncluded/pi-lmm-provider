@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { join } from 'node:path';
 import { LmmIntegration } from './provider.ts';
+import { cacheAdvice } from './cache.ts';
 import { PROVIDER_ID, boundedSignal, safeMessage } from './protocol.ts';
 import { bearerFromHeaders } from './stream.ts';
 
@@ -30,6 +31,15 @@ export default function lmmExtension(pi: ExtensionAPI): void {
       const readableModel = integration.modelForLegacyId(ctx.model.id);
       if (readableModel) await pi.setModel(readableModel);
     }
+  });
+
+  pi.registerCommand('lmm-cache', {
+    description: 'Inspect cache compatibility without making a model or authorization request.',
+    async handler(_args, ctx) {
+      const model = ctx.model?.provider === PROVIDER_ID
+        ? ctx.modelRegistry.find(PROVIDER_ID, ctx.model.id) ?? ctx.model : undefined;
+      pi.sendMessage({ customType: 'lmm-cache', display: true, content: cacheAdvice(model) }, { triggerTurn: false });
+    },
   });
 
   pi.registerCommand('lmm-prices', {

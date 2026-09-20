@@ -5,6 +5,7 @@ import {
 } from '@earendil-works/pi-ai';
 import { anthropicMessagesApi, openAICompletionsApi, openAIResponsesApi } from '@earendil-works/pi-ai/compat';
 import type { Admission } from './catalog.ts';
+import { mergeCacheCompat } from './cache.ts';
 import type { LmmHttp } from './http.ts';
 import { PROVIDER_ID, LmmError, accessToken, object, requireValue, type LmmApi } from './protocol.ts';
 import { MAX_MODEL_REQUEST_RETRIES, parseRetryAfter, retryDelay, waitForRetry } from './retry.ts';
@@ -134,6 +135,7 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
         }
         const api = model.api;
         const wire: Model<Api> = { ...structuredClone(model), id: entry.upstream_model, headers: undefined };
+        wire.compat = mergeCacheCompat(wire.compat, selected.compat);
         const path = api === 'anthropic-messages' ? '/v1/messages' : api === 'openai-responses' ? '/v1/responses' : '/v1/chat/completions';
         const headers: ProviderHeaders = {
           authorization: `Bearer ${access}`, 'X-LMM-Group': entry.group_id,
