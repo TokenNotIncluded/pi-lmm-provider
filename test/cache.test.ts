@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import type { Api, Model } from '@earendil-works/pi-ai';
+import type { Api, Credential, CredentialStore, Model, ModelsStore, ModelsStoreEntry } from '@earendil-works/pi-ai';
 import { ModelRuntime } from '@earendil-works/pi-coding-agent';
 import { CACHE_HELP, cacheAdvice, cacheFlags, mergeCacheCompat } from '../src/cache.ts';
 import { LmmIntegration } from '../src/provider.ts';
@@ -59,8 +59,30 @@ async function fixture(config: unknown) {
     const modelsPath = join(directory, 'models.json');
     await writeFile(modelsPath, JSON.stringify(config));
     const auth = await integration.provider.auth.oauth!.toAuth(credential);
-    const runtime = await ModelRuntime.create({ modelsPath, authPath: join(directory, 'auth.json'), allowModelNetwork: false });
+    // The host may refresh after native registration. Keep that work in memory
+    // and supply the same fake credential, rather than racing file cleanup or
+    // accidentally testing a logged-out provider that clears its catalog.
+    let stored: Credential | undefined = structuredClone(credential);
+    const credentials: CredentialStore = {
+      async read(id) { return id === 'lmm' ? stored : undefined; },
+      async list() { return stored ? [{ providerId: 'lmm', type: stored.type }] : []; },
+      async modify(id, update) {
+        assert.equal(id, 'lmm');
+        stored = await update(stored);
+        return stored;
+      },
+      async delete(id) { if (id === 'lmm') stored = undefined; },
+    };
+    const entries = new Map<string, ModelsStoreEntry>();
+    const modelsStore: ModelsStore = {
+      async read(id) { return entries.get(id); },
+      async write(id, entry) { entries.set(id, structuredClone(entry)); },
+      async delete(id) { entries.delete(id); },
+    };
+    const runtime = await ModelRuntime.create({ modelsPath, credentials, modelsStore, allowModelNetwork: false });
     runtime.registerNativeProvider(integration.provider);
+    const refreshed = await runtime.refresh({ providers: ['lmm'], allowNetwork: false });
+    assert.equal(refreshed.errors.size, 0);
     assert.equal(runtime.getError(), undefined);
     return { integration, runtime, auth, requests, async dispose() { integration.dispose(); await rm(directory, { recursive: true, force: true }); } };
   } catch (error) { integration.dispose(); await rm(directory, { recursive: true, force: true }); throw error; }
