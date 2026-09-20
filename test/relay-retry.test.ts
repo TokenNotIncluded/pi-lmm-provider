@@ -54,7 +54,7 @@ function harness(factory: Factory, requestFetch: typeof fetch = async () => new 
   const dispatch: ProviderStreams['stream'] = (_model, _context, options) => {
     attempts += 1;
     assert.equal(options?.maxRetries, 0, 'SDK retries must not multiply relay attempts');
-    return factory(attempts, options ?? {});
+    return factory(attempts, { ...options });
   };
   const adapter: ProviderStreams = { stream: dispatch, streamSimple: dispatch };
   const relay = createRelay(new LmmHttp({ fetch: requestFetch }), {
