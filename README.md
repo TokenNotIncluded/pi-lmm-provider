@@ -45,6 +45,7 @@ pi install /absolute/path/to/pi-lmm-provider
 The extension also provides these commands:
 
 - `/lmm-prices` refreshes the account-specific model catalog and displays current pricing.
+- `/lmm-cache` displays the selected model's cache settings and help without making network requests.
 - `/lmm-revoke` revokes the server authorization after interactive confirmation.
 - `/logout` removes the local Pi login.
 
@@ -56,9 +57,67 @@ For models advertised by LMM as `openai-completions`, the plugin still uses the 
 
 After upgrading from an older alpha, restart Pi and run `/model` or `/lmm-prices` once. The provider rebuilds the session-bound cache from the current Pi catalog; it does not trust stale `reasoning:false` metadata from an older plugin.
 
-For the domestic DeepSeek V4 and reviewed GLM 5.3 entries, the provider also enables long prompt-cache retention and session-affinity headers. This keeps repeated turns on the same upstream worker and avoids the `pi-cache-optimizer` warning about missing DeepSeek compatibility metadata.
+For the domestic DeepSeek V4 and reviewed GLM 5.3 entries, the provider also enables long prompt-cache retention and session-affinity headers. These request cache-friendly behavior from the gateway; they do not guarantee a particular worker, retention duration, cache hit, or lower charge. See [Cache compatibility](#cache-compatibility) for overrides and the `pi-cache-optimizer` advisory.
 
 Models using server-side variable billing remain selectable when Pi has an exact official model match. Their names include `LMM variable billing`. Pi shows a public reference estimate, while the LMM wallet settlement is authoritative. Wallet values are platform credit, not spendable US dollars.
+
+## Cache compatibility
+
+A `pi-cache-optimizer` warning about missing `supportsLongCacheRetention` or `sendSessionAffinityHeaders` is a cache advisory, not evidence that OAuth or a model request failed. Run `/lmm-cache` to inspect the selected model's merged flags and open this help. That command does not read credentials, contact LMM, or trigger an assistant turn. The warning originates in the separate optimizer extension; LMM does not suppress its messages.
+
+The reviewed domestic DeepSeek V4 and GLM 5.3 profiles already enable both flags. After an upgrade, restart Pi, open `/model`, select the model again, and inspect `/lmm-cache` before adding an override. Do not reauthorize solely because of this cache warning. An actual 401/403 or request error needs separate diagnosis.
+
+For another route, set `supportsLongCacheRetention` to `true` only when the gateway and backing model accept the adapter's long-retention fields. Set `sendSessionAffinityHeaders` to `true` only when the gateway supports Pi's session-affinity headers. Model names alone do not prove support. These flags request behavior; they neither enable caching on an unsupported server nor guarantee savings. Session-affinity headers identify a session, not an OAuth credential.
+
+Edit `~/.pi/agent/models.json` (or `models.json` in your configured Pi agent directory). Merge the `providers.lmm` entries below into your existing file rather than overwriting other providers. Use the exact readable ID shown under LMM in `/model`, including the group and spaces, but without the leading `lmm/` provider label. Unknown IDs do not add or authorize a model.
+
+A model-only override affects just the reviewed route:
+
+```json
+{
+  "providers": {
+    "lmm": {
+      "modelOverrides": {
+        "国产[Kimi/Deepseek/GLM] / deepseek-v4-pro": {
+          "compat": {
+            "supportsLongCacheRetention": true,
+            "sendSessionAffinityHeaders": true
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Provider-level `compat` sets defaults for all LMM models, while `modelOverrides` wins for an individual model, including explicit `false`. A conservative default with one reviewed exception is:
+
+```json
+{
+  "providers": {
+    "lmm": {
+      "compat": {
+        "supportsLongCacheRetention": false,
+        "sendSessionAffinityHeaders": false
+      },
+      "modelOverrides": {
+        "国产[Kimi/Deepseek/GLM] / deepseek-v4-pro": {
+          "compat": {
+            "supportsLongCacheRetention": true,
+            "sendSessionAffinityHeaders": true
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Do not enable provider-wide `true` merely to silence a warning: it applies to every current and future LMM catalog model. Reopen `/model` after editing, then use `/lmm-cache` to verify the flags. Cache behavior also depends on the request's cache-retention setting and session ID.
+
+Only these two boolean compatibility overrides are forwarded from the selected model by the LMM relay. Other compatibility and capability metadata remain from the verified catalog profile. The examples do not replace OAuth, add an API key, change the issuer, grant groups/models, or increase the admitted output limit. Leave credentials, headers, `baseUrl`, and custom `models` out of a cache-only configuration.
+
+Pi's [custom-model documentation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md#per-model-overrides) describes how provider and model overrides are merged. The automated tests load the examples above through the installed Pi host and verify the resulting OAuth/group/session-affinity request headers.
 
 ## Preview status
 
