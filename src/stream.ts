@@ -7,17 +7,15 @@ import { anthropicMessagesApi, openAICompletionsApi, openAIResponsesApi } from '
 import type { Admission } from './catalog.ts';
 import type { LmmHttp } from './http.ts';
 import { PROVIDER_ID, LmmError, accessToken, object, requireValue, type LmmApi } from './protocol.ts';
+import { MAX_MODEL_REQUEST_RETRIES, parseRetryAfter, retryDelay, waitForRetry } from './retry.ts';
+
+export { MAX_MODEL_REQUEST_RETRIES } from './retry.ts';
 
 const streams: Record<LmmApi, ProviderStreams> = {
   'openai-completions': openAICompletionsApi(),
   'openai-responses': openAIResponsesApi(),
   'anthropic-messages': anthropicMessagesApi(),
 };
-
-/** Maximum additional attempts for transient model transport failures. */
-export const MAX_MODEL_REQUEST_RETRIES = 5;
-const RETRY_BASE_DELAY_MS = 250;
-const RETRY_MAX_DELAY_MS = 8_000;
 
 function errorText(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -30,28 +28,39 @@ function errorStatus(error: unknown, message = errorText(error)): number | undef
   if (error && typeof error === 'object') {
     for (const key of ['status', 'statusCode']) {
       const value = (error as Record<string, unknown>)[key];
-      if (typeof value === 'number' && Number.isInteger(value)) return value;
+      if (typeof value === 'number' && Number.isInteger(value) && value >= 400 && value <= 599) return value;
     }
   }
-  const match = message.match(/\b([45]\d{2})\b/);
-  return match ? Number(match[1]) : undefined;
+  // SDK error messages start with a status or explicitly label it as HTTP.
+  // An unrelated number in a response body must not decide retry eligibility.
+  const match = message.match(/^(?:HTTP\s+)?([45]\d{2})\b|\bHTTP\s+([45]\d{2})\b/i);
+  return match ? Number(match[1] ?? match[2]) : undefined;
+}
+
+function isAborted(error: unknown): boolean {
+  if (error && typeof error === 'object') {
+    if ('name' in error && error.name === 'AbortError') return true;
+    if ('stopReason' in error && error.stopReason === 'aborted') return true;
+  }
+  return /\babort(?:ed|ing)\b|cancel(?:led|ed)/i.test(errorText(error));
 }
 
 function isTransportFailure(error: unknown): boolean {
+  if (isAborted(error)) return false;
   const message = errorText(error);
   const status = errorStatus(error, message);
-  if (status !== undefined) return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+  if (status !== undefined) return [408, 425, 429, 500, 502, 503, 504].includes(status);
   return /network|transport|disconnect|decod(?:e|ing)|response body|fetch failed|socket|timed out|stream ended before/i.test(message);
 }
 
 function publicErrorMessage(error: unknown, retries = 0, outputStarted = false): string {
-  const message = errorText(error);
-  if (/\babort(?:ed|ing)\b|cancel(?:led|ed)|request aborted/i.test(message)) return 'LMM request cancelled.';
-  const status = errorStatus(error, message);
+  if (isAborted(error)) return 'LMM request cancelled.';
+  const status = errorStatus(error);
+  const exhausted = retries >= MAX_MODEL_REQUEST_RETRIES ? ` All ${MAX_MODEL_REQUEST_RETRIES} retries were exhausted.` : '';
   if (status === 401) return 'LMM authorization expired or was revoked. Run /login again.';
   if (status === 403) return 'This LMM account is not allowed to use the selected model. Run /login again or choose another model.';
-  if (status === 429) return 'LMM rate limit reached. Wait a moment and retry.';
-  if (status !== undefined && status >= 500) return `LMM upstream is temporarily unavailable (HTTP ${status}). Try again shortly.`;
+  if (status === 429) return `LMM rate limit reached. Wait a moment and retry.${exhausted}`;
+  if (status !== undefined && status >= 500) return `LMM upstream is temporarily unavailable (HTTP ${status}). Try again shortly.${exhausted}`;
   if (isTransportFailure(error)) {
     if (outputStarted) return 'LMM stream disconnected after output started. The partial request was not replayed to avoid duplicate billing; try again.';
     return retries >= MAX_MODEL_REQUEST_RETRIES
@@ -59,22 +68,6 @@ function publicErrorMessage(error: unknown, retries = 0, outputStarted = false):
       : 'LMM stream disconnected before completion. Retrying may succeed.';
   }
   return 'LMM model request failed. Check authorization, account access, and server availability.';
-}
-
-async function waitForRetry(delay: number, signal: AbortSignal | undefined): Promise<void> {
-  if (delay <= 0) return;
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', abort);
-      resolve();
-    }, delay);
-    const abort = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', abort);
-      reject(signal?.reason ?? new Error('aborted'));
-    };
-    signal?.addEventListener('abort', abort, { once: true });
-  });
 }
 
 export function bearerFromHeaders(headers: ProviderHeaders | undefined): string {
@@ -115,7 +108,7 @@ export interface RelayHooks {
   onFinish(access: string): Promise<void>;
 }
 
-export function createRelay(http: LmmHttp, hooks: RelayHooks): ProviderStreams {
+export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly<Record<LmmApi, ProviderStreams>> = streams): ProviderStreams {
   const run = (simple: boolean, selected: Model<Api>, context: Context, options: StreamOptions = {}) => {
     const output = createAssistantMessageEventStream();
     void (async () => {
@@ -123,7 +116,12 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks): ProviderStreams {
       let sent = false;
       let attempt = 0;
       let streamStarted = false;
+      let providerAborted = false;
+      let partial: AssistantMessage | undefined;
+      let responseStatus: number | undefined;
+      let responseRetryAfter: number | undefined;
       try {
+        options.signal?.throwIfAborted();
         requireValue(options.apiKey === undefined, 'An API key must not be combined with LMM OAuth.');
         access = bearerFromHeaders(options.headers);
         const admission = hooks.lookup(selected.id, access);
@@ -145,6 +143,7 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks): ProviderStreams {
         };
         const authorizedAccess = access;
         const guardedFetch: typeof fetch = async (input, init) => {
+          options.signal?.throwIfAborted();
           const target = input instanceof Request ? input.url : String(input);
           const endpoint = `${http.issuer}${path}`;
           // The Anthropic SDK adds this transport flag to its beta endpoint.
@@ -157,7 +156,14 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks): ProviderStreams {
           actual.set('x-lmm-group', entry.group_id);
           sent = true;
           const destination = sdkBeta ? (input instanceof Request ? new Request(endpoint, input) : endpoint) : input;
-          return http.fetch(destination, { ...init, headers: actual, redirect: 'error', credentials: 'omit' });
+          const transportSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+          const signal = options.signal && transportSignal ? AbortSignal.any([options.signal, transportSignal]) : options.signal ?? transportSignal;
+          const response = await http.fetch(destination, { ...init, signal, headers: actual, redirect: 'error', credentials: 'omit' });
+          // SDK error events often discard headers/status. Retain only safe
+          // retry metadata here; never retain or log the upstream error body.
+          responseStatus = response.ok ? undefined : response.status;
+          responseRetryAfter = parseRetryAfter(response.headers.get('retry-after'));
+          return response;
         };
         const originalOnPayload = options.onPayload;
         const wireOptions: ProviderStreamOptions = {
@@ -175,52 +181,56 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks): ProviderStreams {
           messages: context.messages.map((message) => message.role === 'assistant' && message.provider === PROVIDER_ID && message.model === selected.id
             ? { ...message, model: entry.upstream_model } : message),
         };
-        // A provider stream can fail after fetch() has returned, while its
-        // response body is being decoded. Retry only if Pi has not received a
-        // generation-start event yet; replaying after that point can duplicate
-        // billable output. The source emits request failures as an `error`
-        // event, so inspect it here instead of relying on a thrown exception.
         while (true) {
-          const source = simple ? streams[api].streamSimple(wire, wireContext, wireOptions) : streams[api].stream(wire, wireContext, wireOptions);
-          let retry = false;
+          options.signal?.throwIfAborted();
+          responseStatus = undefined;
+          responseRetryAfter = undefined;
+          partial = undefined;
           try {
+            // Creation, iteration and result decoding all belong to the same
+            // attempt. Some adapters throw before returning an event stream.
+            const source = simple ? adapters[api].streamSimple(wire, wireContext, wireOptions) : adapters[api].stream(wire, wireContext, wireOptions);
             for await (const event of source) {
-              if (event.type === 'start' || (event.type !== 'error' && event.type !== 'done')) streamStarted = true;
+              options.signal?.throwIfAborted();
               if (event.type === 'error') {
-                // Classify the provider's original error before rebind() removes
-                // its raw message from the user-visible event.
-                const shouldRetry = !streamStarted && isTransportFailure(event.error) && attempt < MAX_MODEL_REQUEST_RETRIES;
-                const error = rebind(event.error, selected);
-                if (shouldRetry) {
-                  attempt += 1;
-                  await waitForRetry(Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)), options.signal);
-                  retry = true;
-                  break;
-                }
-                error.errorMessage = publicErrorMessage(event.error, attempt, streamStarted);
-                output.push({ ...event, error });
-                output.end(error);
-                return;
+                if (event.error.content.length || !partial) partial = event.error;
+                providerAborted = event.reason === 'aborted' || event.error.stopReason === 'aborted';
+                // Use the same decision for SDK error events and thrown errors.
+                throw event.error;
               }
+              // Even `start` (and terminal-only output) permanently forbids a replay.
+              streamStarted = true;
+              if ('partial' in event) partial = event.partial;
               output.push(rebindEvent(event, selected));
             }
+            const result = await source.result();
+            if (result.stopReason === 'error' || result.stopReason === 'aborted') throw result;
+            output.end(rebind(result, selected));
+            break;
           } catch (error) {
-            if (!streamStarted && isTransportFailure(error) && attempt < MAX_MODEL_REQUEST_RETRIES) {
-              attempt += 1;
-              await waitForRetry(Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)), options.signal);
-              retry = true;
-            } else {
+            if (options.signal?.aborted || providerAborted || isAborted(error)) {
+              providerAborted = true;
               throw error;
             }
+            const failure = responseStatus === undefined || error instanceof LmmError
+              ? error : { status: responseStatus, errorMessage: errorText(error) };
+            const delay = !streamStarted && isTransportFailure(failure) ? retryDelay(attempt, responseRetryAfter) : undefined;
+            if (delay === undefined) throw failure;
+            attempt += 1;
+            // A rejected wait escapes to the outer cancellation handler; it is
+            // never mistaken for another failed model attempt.
+            await waitForRetry(delay, options.signal);
           }
-          if (retry) continue;
-          output.end(rebind(await source.result(), selected));
-          break;
         }
       } catch (error) {
-        const message = errorMessage(selected, options.signal?.aborted === true, error, attempt, streamStarted);
-        if (error instanceof LmmError) message.errorMessage = error.message;
-        output.push({ type: 'error', reason: options.signal?.aborted ? 'aborted' : 'error', error: message });
+        const aborted = options.signal?.aborted === true || providerAborted || isAborted(error);
+        const message = errorMessage(selected, aborted, error, attempt, streamStarted);
+        if (partial) {
+          message.content = partial.content;
+          message.usage = partial.usage;
+        }
+        if (!aborted && error instanceof LmmError) message.errorMessage = error.message;
+        output.push({ type: 'error', reason: aborted ? 'aborted' : 'error', error: message });
         output.end(message);
       } finally {
         if (sent && access) await hooks.onFinish(access).catch(() => {});
