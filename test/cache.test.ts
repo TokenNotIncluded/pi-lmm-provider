@@ -138,11 +138,15 @@ test('cache overrides cannot change the admitted endpoint or output limit', { ti
   const f = await fixture(examples[0]);
   try {
     const selected = f.runtime.getModel('lmm', primary)!;
-    const request = await invoke(f, { ...selected, baseUrl: 'https://untrusted.invalid/v1', maxTokens: 999_999,
+    const baseline = await invoke(f, selected);
+    const request = await invoke(f, { ...selected, baseUrl: 'https://untrusted.invalid/v1', maxTokens: 999_999, contextWindow: 999_999,
       headers: { authorization: 'Bearer wrong', 'x-api-key': 'wrong' } });
     assert.equal(request.headers.get('authorization'), `Bearer ${token}`);
     assert.equal(request.headers.get('x-api-key'), null);
-    assert.equal(request.body.max_tokens ?? request.body.max_completion_tokens, 512);
+    // Pi can reduce the output budget further to reserve room for context.
+    const admittedLimit = baseline.body.max_tokens ?? baseline.body.max_completion_tokens;
+    assert.ok(typeof admittedLimit === 'number' && Number.isSafeInteger(admittedLimit) && admittedLimit > 0 && admittedLimit <= 512);
+    assert.equal(request.body.max_tokens ?? request.body.max_completion_tokens, admittedLimit);
   } finally { await f.dispose(); }
 });
 
