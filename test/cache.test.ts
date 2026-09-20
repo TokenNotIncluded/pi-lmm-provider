@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import { ModelRuntime } from '@earendil-works/pi-coding-agent';
-import { CACHE_HELP, cacheAdvice, mergeCacheCompat } from '../src/cache.ts';
+import { CACHE_HELP, cacheAdvice, cacheFlags, mergeCacheCompat } from '../src/cache.ts';
 import { LmmIntegration } from '../src/provider.ts';
 
 const issuer = 'https://api.lmm.best';
@@ -97,8 +97,7 @@ for (const scenario of cases) {
       for (const [id, enabled] of [[primary, scenario.primary], [secondary, scenario.secondary]] as const) {
         const selected = f.runtime.getModel('lmm', id);
         assert.ok(selected);
-        assert.equal(selected.compat?.supportsLongCacheRetention, enabled);
-        assert.equal(selected.compat?.sendSessionAffinityHeaders, enabled);
+        assert.deepEqual(cacheFlags(selected.compat), flags(enabled));
         const request = await invoke(f, selected);
         assert.equal(request.headers.get('authorization'), `Bearer ${token}`);
         assert.equal(request.headers.get('x-api-key'), null);
@@ -137,7 +136,7 @@ test('only cache booleans are copied and neither model is mutated', () => {
 
 test('cache help distinguishes advisory from failure and never prints credentials', () => {
   assert.match(cacheAdvice(), /Select an LMM model/);
-  const model = { provider: 'lmm', compat: flags(false), headers: { authorization: token } } as Model<Api>;
+  const model = { provider: 'lmm', compat: flags(false), headers: { authorization: token } };
   const advice = cacheAdvice(model);
   assert.match(advice, /supportsLongCacheRetention: false/);
   assert.match(advice, /not an OAuth or model-request failure/);
