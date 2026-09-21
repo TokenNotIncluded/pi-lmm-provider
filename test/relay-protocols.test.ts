@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import type { AssistantMessageEvent, ProviderAuthInteraction } from "@earendil-works/pi-ai";
+import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 import { LmmIntegration } from "../src/provider.ts";
 import { LmmHttp } from "../src/http.ts";
 import { LmmOAuth } from "../src/oauth.ts";
@@ -188,7 +189,7 @@ for (const protocol of ["openai-responses", "anthropic-messages"] as const) {
         const events: AssistantMessageEvent[] = [];
         for await (const e of integration.provider.streamSimple!(
           selected,
-          { messages: [{ role: "user", content: "hello", timestamp: Date.now() }] },
+          normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: Date.now() }] }),
           { headers: auth.headers, maxTokens: 32 },
         ))
           events.push(e);
@@ -291,7 +292,7 @@ test("OpenAI-compatible gateway models forward the selected reasoning level", { 
     const events: AssistantMessageEvent[] = [];
     for await (const event of integration.provider.streamSimple!(
       selected,
-      { messages: [{ role: "user", content: "hello", timestamp: Date.now() }] },
+      normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: Date.now() }] }),
       { headers: auth.headers, reasoning: "high" },
     )) events.push(event);
     const done = events.find((event) => event.type === "done");

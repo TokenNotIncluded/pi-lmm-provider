@@ -57,7 +57,7 @@ test('preserves reasoning metadata for every supported gateway vendor protocol',
   const cases = [
     { id: 'gpt-6-astra', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
     { id: 'claude-sonnet-4-6', levels: ['max'] },
-    { id: 'gemini-3.7-flash', levels: ['minimal', 'low', 'medium', 'high'] },
+    { id: 'gemini-3.7-flash', levels: ['low', 'medium', 'high'] },
     { id: 'grok-4.6', levels: ['low', 'medium', 'high', 'xhigh'] },
     { id: 'o3', levels: ['low', 'medium', 'high'] },
   ] as const;

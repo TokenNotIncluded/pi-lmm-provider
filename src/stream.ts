@@ -1,6 +1,6 @@
 import {
   createAssistantMessageEventStream,
-  type Api, type AssistantMessage, type AssistantMessageEvent, type Context, type Model,
+  type Api, type AssistantMessage, type AssistantMessageEvent, type Model, type TranscriptContext,
   type ProviderHeaders, type ProviderStreamOptions, type ProviderStreams, type StreamOptions,
 } from '@earendil-works/pi-ai';
 import { anthropicMessagesApi, openAICompletionsApi, openAIResponsesApi } from '@earendil-works/pi-ai/compat';
@@ -110,7 +110,7 @@ export interface RelayHooks {
 }
 
 export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly<Record<LmmApi, ProviderStreams>> = streams): ProviderStreams {
-  const run = (simple: boolean, selected: Model<Api>, context: Context, options: StreamOptions = {}) => {
+  const run = (simple: boolean, selected: Model<Api>, context: TranscriptContext, options: StreamOptions = {}) => {
     const output = createAssistantMessageEventStream();
     void (async () => {
       let access: string | undefined;
@@ -178,7 +178,7 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
             return { ...object(replacement ?? payload), model: entry.upstream_model, stream: true };
           },
         };
-        const wireContext: Context = {
+        const wireContext: TranscriptContext = {
           ...context,
           messages: context.messages.map((message) => message.role === 'assistant' && message.provider === PROVIDER_ID && message.model === selected.id
             ? { ...message, model: entry.upstream_model } : message),

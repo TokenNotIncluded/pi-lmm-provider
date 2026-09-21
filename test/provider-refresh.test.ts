@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript';
 import { createModels, type Credential, type OAuthCredential, type RefreshModelsContext } from '@earendil-works/pi-ai';
 import { LmmIntegration } from '../src/provider.ts';
 
@@ -65,7 +66,7 @@ test('refreshes, rebinds the snapshot, and keeps the model available', async () 
     assert.equal(integration.provider.filterModels!(oldModels, refreshed).length, 1);
     const selected = integration.provider.getModels()[0]!;
     const events = [];
-    for await (const event of integration.provider.streamSimple!(selected, { messages: [{ role: 'user', content: 'say hello', timestamp: Date.now() }] }, { headers: auth.headers })) events.push(event);
+    for await (const event of integration.provider.streamSimple!(selected, normalizeContext({ messages: [{ role: 'user', content: 'say hello', timestamp: Date.now() }] }), { headers: auth.headers })) events.push(event);
     const done = events.find((event) => event.type === 'done');
     assert.ok(done && done.type === 'done', `${events.map((event) => event.type).join(',')}:${JSON.stringify(events[0])}`);
     assert.equal(done.message.stopReason, 'stop');
