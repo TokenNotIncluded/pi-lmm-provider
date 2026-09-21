@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { Api, Credential, CredentialStore, Model, ModelsStore, ModelsStoreEntry } from '@earendil-works/pi-ai';
+import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript';
 import { ModelRuntime } from '@earendil-works/pi-coding-agent';
 import { CACHE_HELP, cacheAdvice, cacheFlags, mergeCacheCompat } from '../src/cache.ts';
 import { LmmIntegration } from '../src/provider.ts';
@@ -89,7 +90,7 @@ async function fixture(config: unknown) {
 }
 
 async function invoke(f: Awaited<ReturnType<typeof fixture>>, model: Model<Api>) {
-  const output = f.integration.provider.streamSimple!(model, { messages: [{ role: 'user', content: 'hello', timestamp: 1 }] }, {
+  const output = f.integration.provider.streamSimple!(model, normalizeContext({ messages: [{ role: 'user', content: 'hello', timestamp: 1 }] }), {
     headers: f.auth.headers, cacheRetention: 'long', sessionId: 'cache-session',
   });
   for await (const _event of output) { /* Drain the actual installed Pi adapter. */ }

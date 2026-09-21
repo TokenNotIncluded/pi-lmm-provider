@@ -5,6 +5,7 @@ import {
   type AssistantMessage, type AssistantMessageEvent, type AssistantMessageEventStream,
   type Model, type ProviderStreamOptions, type ProviderStreams,
 } from '@earendil-works/pi-ai';
+import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript';
 import type { Admission } from '../src/catalog.ts';
 import { LmmHttp } from '../src/http.ts';
 import { createRelay } from '../src/stream.ts';
@@ -65,7 +66,7 @@ function harness(factory: Factory, requestFetch: typeof fetch = async () => new 
 }
 
 async function collect(h: ReturnType<typeof harness>, signal?: AbortSignal, simple = true) {
-  const output = (simple ? h.relay.streamSimple : h.relay.stream)(model, { messages: [] }, {
+  const output = (simple ? h.relay.streamSimple : h.relay.stream)(model, normalizeContext({ messages: [] }), {
     headers: { authorization: 'Bearer lmm_at_retry_fixture' }, signal,
   });
   const events: AssistantMessageEvent[] = [];
