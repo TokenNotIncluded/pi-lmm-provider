@@ -92,29 +92,28 @@ const fromHttp: Factory = (_attempt, options) => {
 
 for (const simple of [false, true]) {
   for (const status of [408, 425, 429, 500, 502, 503, 504]) {
-    test(`${simple ? 'simple' : 'full'} relay retries HTTP ${status} five times then succeeds`, { timeout: 2000 }, async () => {
+    test(`${simple ? 'simple' : 'full'} relay does not replay HTTP ${status}`, { timeout: 2000 }, async () => {
       let calls = 0;
       const h = harness(fromHttp, async () => new Response(null, {
-        status: ++calls <= 5 ? status : 200, headers: { 'retry-after': '0' },
+        status: (++calls, status), headers: { 'retry-after': '0' },
       }));
       const { result, events } = await collect(h, undefined, simple);
-      assert.equal(result.stopReason, 'stop');
-      assert.equal(calls, 6);
-      assert.equal(h.attempts, 6);
-      assert.deepEqual(events.map((event) => event.type), ['done']);
+      assert.equal(result.stopReason, 'error');
+      assert.equal(calls, 1);
+      assert.equal(h.attempts, 1);
+      assert.deepEqual(events.map((event) => event.type), ['error']);
       await h.finished;
       assert.equal(h.finishes, 1, 'balance refresh runs once for the whole logical request');
     });
   }
 }
 
-test('six total HTTP attempts is a hard maximum and final errors are redacted', { timeout: 2000 }, async () => {
+test('a failed HTTP request is reported once and redacted', { timeout: 2000 }, async () => {
   const h = harness(fromHttp, async () => new Response(null, { status: 503, headers: { 'retry-after': '0' } }));
   const { result, events } = await collect(h);
-  assert.equal(h.attempts, 6);
+  assert.equal(h.attempts, 1);
   assert.equal(result.stopReason, 'error');
   assert.match(result.errorMessage!, /HTTP 503/);
-  assert.match(result.errorMessage!, /5 retries were exhausted/);
   assert.doesNotMatch(JSON.stringify(events), /DO_NOT_PRINT/);
 });
 
@@ -132,9 +131,8 @@ test('a long Retry-After is not shortened into an early request', { timeout: 100
   assert.equal(h.attempts, 1);
 });
 
-test('response-body decode exceptions before the first event get at most five retries', { timeout: 2000 }, async () => {
-  const h = harness((attempt, options) => {
-    if (attempt === 6) return success();
+test('response-body decode exceptions before the first event are not replayed', { timeout: 2000 }, async () => {
+  const h = harness((_attempt, options) => {
     const source = createAssistantMessageEventStream();
     source[Symbol.asyncIterator] = async function* () {
       const response = await options.fetch!(endpoint);
@@ -144,17 +142,14 @@ test('response-body decode exceptions before the first event get at most five re
     };
     return source;
   }, async () => new Response(null, { headers: { 'retry-after': '0' } }));
-  assert.equal((await collect(h)).result.stopReason, 'stop');
-  assert.equal(h.attempts, 6);
+  assert.equal((await collect(h)).result.stopReason, 'error');
+  assert.equal(h.attempts, 1);
 });
 
-test('synchronous adapter failures are inside the retry boundary', { timeout: 2000 }, async () => {
-  const h = harness((attempt) => {
-    if (attempt === 1) throw new TypeError('fetch failed');
-    return success();
-  });
-  assert.equal((await collect(h)).result.stopReason, 'stop');
-  assert.equal(h.attempts, 2);
+test('synchronous adapter failures are not replayed', { timeout: 2000 }, async () => {
+  const h = harness(() => { throw new TypeError('fetch failed'); });
+  assert.equal((await collect(h)).result.stopReason, 'error');
+  assert.equal(h.attempts, 1);
 });
 
 for (const kind of ['start', 'text_delta'] as const) {
@@ -208,16 +203,13 @@ test('an aborted provider error is not retried even if its text looks transient'
   assert.equal(result.stopReason, 'aborted');
 });
 
-test('user cancellation interrupts Retry-After without dispatching another request', { timeout: 2000 }, async () => {
+test('a Retry-After response is not replayed when automatic retries are disabled', { timeout: 2000 }, async () => {
   const controller = new AbortController();
   const h = harness(fromHttp, async () => new Response(null, { status: 503, headers: { 'retry-after': '60' } }));
-  const timer = setTimeout(() => controller.abort(), 30);
-  try {
-    assert.equal((await collect(h, controller.signal)).result.stopReason, 'aborted');
-    assert.equal(h.attempts, 1);
-    await h.finished;
-    assert.equal(h.finishes, 1);
-  } finally { clearTimeout(timer); }
+  assert.equal((await collect(h, controller.signal)).result.stopReason, 'error');
+  assert.equal(h.attempts, 1);
+  await h.finished;
+  assert.equal(h.finishes, 1);
 });
 
 test('cancellation is propagated to an in-flight fetch', { timeout: 2000 }, async () => {

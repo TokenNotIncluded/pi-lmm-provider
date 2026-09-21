@@ -17,14 +17,11 @@ test('Retry-After accepts seconds and HTTP dates without treating junk as a date
   }
 });
 
-test('backoff is exponential and stops after five additional attempts', () => {
-  assert.equal(MAX_MODEL_REQUEST_RETRIES, 5);
-  assert.deepEqual(Array.from({ length: 5 }, (_, attempt) => retryDelay(attempt)), [250, 500, 1000, 2000, 4000]);
-  assert.equal(retryDelay(5), undefined);
-  assert.equal(retryDelay(6, 0), undefined);
-  assert.equal(retryDelay(0, 0), 0);
-  assert.equal(retryDelay(0, 30_000), 30_000);
-  assert.equal(retryDelay(0, MAX_RETRY_AFTER_MS), MAX_RETRY_AFTER_MS);
+test('billable model requests never receive an automatic retry delay', () => {
+  assert.equal(MAX_MODEL_REQUEST_RETRIES, 0);
+  assert.equal(retryDelay(0), undefined);
+  assert.equal(retryDelay(0, 0), undefined);
+  assert.equal(retryDelay(0, MAX_RETRY_AFTER_MS), undefined);
 });
 
 test('long/overflowing Retry-After never becomes an early retry', () => {

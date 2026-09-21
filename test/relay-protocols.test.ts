@@ -97,7 +97,6 @@ for (const protocol of ["openai-responses", "anthropic-messages"] as const) {
           issuer + (protocol === "openai-responses" ? "/v1/responses" : "/v1/messages"),
         );
         modelAttempts += 1;
-        if (modelAttempts <= 5) return new Response(null, { status: 503, headers: { "retry-after": "0" } });
         const headers = new Headers(
           init?.headers ?? (input instanceof Request ? input.headers : undefined),
         );
@@ -204,7 +203,7 @@ for (const protocol of ["openai-responses", "anthropic-messages"] as const) {
         );
         assert.ok(events.some((e) => e.type === "text_delta"));
         assert.equal(sent, true);
-        assert.equal(modelAttempts, 6, "a transient model failure should allow five retries");
+        assert.equal(modelAttempts, 1, "a billable model request must never be replayed automatically");
         await balanceRefreshed;
       } finally {
         integration.dispose();

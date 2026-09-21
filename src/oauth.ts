@@ -41,13 +41,13 @@ export class LmmOAuth {
     requireValue(authorization.issuer === this.http.issuer &&
       authorization.authorization_endpoint === `${this.http.resource}/authorize` &&
       authorization.token_endpoint === `${this.http.resource}/token` &&
-      authorization.revocation_endpoint === `${this.http.resource}/revoke`, 'LMM discovery issuer or endpoints do not match the configured issuer.');
-    requireValue(Array.isArray(authorization.code_challenge_methods_supported) && authorization.code_challenge_methods_supported.includes('S256'));
-    requireValue(Array.isArray(authorization.response_types_supported) && authorization.response_types_supported.includes('code'));
+      authorization.revocation_endpoint === `${this.http.resource}/revoke`, 'LMM OAuth discovery issuer or endpoint does not match the configured issuer.');
+    requireValue(Array.isArray(authorization.code_challenge_methods_supported) && authorization.code_challenge_methods_supported.includes('S256'), 'LMM OAuth discovery does not support the required S256 PKCE method.');
+    requireValue(Array.isArray(authorization.response_types_supported) && authorization.response_types_supported.includes('code'), 'LMM OAuth discovery does not support the authorization-code flow.');
     requireValue(authorization.authorization_response_iss_parameter_supported === true, 'LMM discovery must advertise issuer-bound authorization responses.');
     requireValue(resource.resource === this.http.resource && Array.isArray(resource.authorization_servers) &&
       resource.authorization_servers.length === 1 && resource.authorization_servers[0] === this.http.issuer,
-      'LMM protected-resource metadata does not match the configured resource.');
+      'LMM OAuth protected-resource metadata does not match the configured resource.');
   }
 
   async login(interaction: ProviderAuthInteraction): Promise<LmmCredential> {
@@ -89,12 +89,12 @@ export class LmmOAuth {
   }
 
   private parseToken(response: Record<string, unknown>, startedAt: number, previous?: LmmCredential): LmmCredential {
-    requireValue(response.token_type === 'Bearer');
+    requireValue(response.token_type === 'Bearer', 'LMM OAuth token response did not contain Bearer token type.');
     const access = accessToken(response.access_token);
     const refresh = text(response.refresh_token, 4096);
-    requireValue(!/\s/.test(refresh) && refresh !== access);
+    requireValue(!/\s/.test(refresh) && refresh !== access, 'LMM OAuth token response contained an invalid refresh token.');
     const lifetime = nonnegative(response.expires_in);
-    requireValue(Number.isSafeInteger(lifetime) && lifetime > 0 && lifetime <= 86400);
+    requireValue(Number.isSafeInteger(lifetime) && lifetime > 0 && lifetime <= 86400, 'LMM OAuth token response contained an invalid expiration.');
     const scope = parseScope(response.scope === undefined ? previous?.scope : response.scope);
     const scopes = new Set(scope.split(' '));
     if (previous) {

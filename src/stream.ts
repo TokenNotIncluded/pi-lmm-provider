@@ -55,18 +55,18 @@ function isTransportFailure(error: unknown): boolean {
 }
 
 function publicErrorMessage(error: unknown, retries = 0, outputStarted = false): string {
+  const message = errorText(error);
   if (isAborted(error)) return 'LMM request cancelled.';
+  if (/IP_ACCESS_ROUTE_REJECTED|IP access policy/i.test(message)) return 'LMM request was blocked by the current IP access policy. Change network or ask the administrator to allow this IP.';
   const status = errorStatus(error);
-  const exhausted = retries >= MAX_MODEL_REQUEST_RETRIES ? ` All ${MAX_MODEL_REQUEST_RETRIES} retries were exhausted.` : '';
+  const exhausted = MAX_MODEL_REQUEST_RETRIES > 0 && retries >= MAX_MODEL_REQUEST_RETRIES ? ` All ${MAX_MODEL_REQUEST_RETRIES} retries were exhausted.` : '';
   if (status === 401) return 'LMM authorization expired or was revoked. Run /login again.';
   if (status === 403) return 'This LMM account is not allowed to use the selected model. Run /login again or choose another model.';
   if (status === 429) return `LMM rate limit reached. Wait a moment and retry.${exhausted}`;
   if (status !== undefined && status >= 500) return `LMM upstream is temporarily unavailable (HTTP ${status}). Try again shortly.${exhausted}`;
   if (isTransportFailure(error)) {
     if (outputStarted) return 'LMM stream disconnected after output started. The partial request was not replayed to avoid duplicate billing; try again.';
-    return retries >= MAX_MODEL_REQUEST_RETRIES
-      ? `LMM stream disconnected before completion after ${MAX_MODEL_REQUEST_RETRIES} retries. Try again later.`
-      : 'LMM stream disconnected before completion. Retrying may succeed.';
+    return 'LMM stream disconnected before completion. The request was not replayed to avoid duplicate billing; try again manually.';
   }
   return 'LMM model request failed. Check authorization, account access, and server availability.';
 }

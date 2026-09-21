@@ -1,7 +1,10 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 
-/** Additional attempts, never total attempts. */
-export const MAX_MODEL_REQUEST_RETRIES = 5;
+/**
+ * Model requests are billable. A transport error can happen after the
+ * upstream accepted and charged a request, so automatic replay is disabled.
+ */
+export const MAX_MODEL_REQUEST_RETRIES = 0;
 const RETRY_BASE_DELAY_MS = 250;
 const RETRY_MAX_BACKOFF_MS = 8_000;
 /** Decline longer server delays rather than retrying before Retry-After. */
