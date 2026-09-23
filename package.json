@@ -25,7 +25,7 @@
     ".": "./src/index.ts"
   },
   "bin": {
-    "lmm-pi-provider": "./scripts/install.mjs"
+    "lmm-pi-provider": "scripts/install.mjs"
   },
   "pi": {
     "extensions": [
