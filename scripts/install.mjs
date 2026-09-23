@@ -53,6 +53,22 @@ export function planRemoval(source, local, userSettings, projectSettings, cwd) {
   return result;
 }
 
+/** PowerShell passes arguments to pi.cmd as an array, never through command interpolation. */
+export function runPi(piBin, args, cwd, platform = process.platform, spawn = spawnSync) {
+  let result;
+  if (platform === 'win32') {
+    const script = "$ErrorActionPreference = 'Stop'; $piArgs = @(ConvertFrom-Json -InputObject $env:LMM_PI_ARGS); & $env:LMM_PI_BIN @piArgs; exit $LASTEXITCODE";
+    result = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+      cwd, stdio: 'inherit', shell: false,
+      env: { ...process.env, LMM_PI_BIN: piBin, LMM_PI_ARGS: JSON.stringify(args) },
+    });
+  } else {
+    result = spawn(piBin, args, { cwd, stdio: 'inherit', shell: false });
+  }
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`pi ${args[0]} failed (${result.status ?? result.signal}).`);
+}
+
 export function switchSource(source, local = false, options = {}) {
   const cwd = options.cwd ?? process.cwd();
   const agentDir = options.agentDir ?? process.env.PI_CODING_AGENT_DIR ?? join(homedir(), '.pi', 'agent');
@@ -60,11 +76,10 @@ export function switchSource(source, local = false, options = {}) {
   const projectSettings = join(cwd, '.pi', 'settings.json');
   if (!isLmmPackageSource(source, cwd)) throw new Error(`The source must contain ${PACKAGE}.`);
   const removals = planRemoval(source, local, userSettings, projectSettings, cwd);
-  const run = options.run ?? ((args) => {
-    const result = spawnSync('pi', args, { cwd, stdio: 'inherit', shell: false });
-    if (result.error) throw result.error;
-    if (result.status !== 0) throw new Error(`pi ${args[0]} failed (${result.status ?? result.signal}).`);
-  });
+  const defaultPi = process.platform === 'win32' ? 'pi.cmd' : 'pi';
+  const piBin = options.piBin ?? process.env.LMM_PI_BIN ?? defaultPi;
+  if (piBin !== defaultPi && !isAbsolute(piBin)) throw new Error('LMM_PI_BIN must be an absolute path to the installed Pi executable.');
+  const run = options.run ?? ((args) => runPi(piBin, args, cwd));
   run(['install', ...(local ? ['--local'] : []), source]);
   for (const item of removals) run(['remove', ...(item.scope === 'project' ? ['--local'] : []), item.source]);
   const remaining = planRemoval(source, local, userSettings, projectSettings, cwd);

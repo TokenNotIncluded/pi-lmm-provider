@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { isLmmPackageSource, planRemoval, switchSource } from '../scripts/install.mjs';
+import { isLmmPackageSource, planRemoval, runPi, switchSource } from '../scripts/install.mjs';
 
 const npm = 'npm:@tokennotincluded/pi-lmm-provider@0.1.0-alpha.2';
 const git = 'git:github.com/TokenNotIncluded/pi-lmm-provider';
@@ -60,6 +60,21 @@ test('a failed new installation leaves existing sources untouched', (t) => {
   f.write(f.userSettings, [git]);
   assert.throws(() => switchSource(npm, false, { cwd: f.cwd, agentDir: f.agentDir, run() { throw new Error('install failed'); } }), /install failed/);
   assert.deepEqual(f.read(f.userSettings), [git]);
+});
+
+test('Windows pi.cmd arguments stay out of the PowerShell command text', () => {
+  const source = 'C:\\A & B\\pi-lmm-provider';
+  let call;
+  runPi('C:\\Program Files\\Pi\\pi.cmd', ['install', source], 'C:\\work', 'win32', (command, args, options) => {
+    call = { command, args, options };
+    return { status: 0 };
+  });
+  assert.equal(call.command, 'powershell.exe');
+  assert.equal(call.options.shell, false);
+  assert.deepEqual(JSON.parse(call.options.env.LMM_PI_ARGS), ['install', source]);
+  const script = Buffer.from(call.args.at(-1), 'base64').toString('utf16le');
+  assert.match(script, /ConvertFrom-Json/);
+  assert.equal(script.includes(source), false);
 });
 
 test('local source switching never removes the target and cleans npm from the other scope', (t) => {
