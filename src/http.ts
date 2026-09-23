@@ -54,7 +54,24 @@ export class LmmHttp {
         headers: { accept: "application/json", ...init.headers },
       });
       if (!response.ok) {
-        await response.body?.cancel();
+        let errorCode = '';
+        if (response.headers.get('content-type')?.split(';')[0]?.trim() === 'application/json' && response.body) {
+          try {
+            const body = object(JSON.parse(await response.text()));
+            if (typeof body.error === 'object' && body.error !== null && !Array.isArray(body.error) && typeof (body.error as Record<string, unknown>).code === 'string') {
+              errorCode = (body.error as { code: string }).code;
+            } else if (typeof body.code === 'string') {
+              errorCode = body.code;
+            }
+          } catch {
+            // Keep protocol errors generic when an upstream body is malformed.
+          }
+        } else {
+          await response.body?.cancel();
+        }
+        if (errorCode === 'IP_ACCESS_ROUTE_REJECTED') {
+          throw new LmmError('ip_policy', 'LMM request was blocked by the current IP access policy. Change network or ask the administrator to allow this IP.');
+        }
         if (response.status === 401 || response.status === 403) {
           throw new LmmError(
             "unauthorized",

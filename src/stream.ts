@@ -14,8 +14,8 @@ const streams: Record<LmmApi, ProviderStreams> = {
   'anthropic-messages': anthropicMessagesApi(),
 };
 
-/** Maximum additional attempts for transient model transport failures. */
-export const MAX_MODEL_REQUEST_RETRIES = 5;
+/** Billable model requests are never replayed automatically. */
+export const MAX_MODEL_REQUEST_RETRIES = 0;
 const RETRY_BASE_DELAY_MS = 250;
 const RETRY_MAX_DELAY_MS = 8_000;
 
@@ -44,9 +44,10 @@ function isTransportFailure(error: unknown): boolean {
   return /network|transport|disconnect|decod(?:e|ing)|response body|fetch failed|socket|timed out|stream ended before/i.test(message);
 }
 
-function publicErrorMessage(error: unknown, retries = 0, outputStarted = false): string {
+function publicErrorMessage(error: unknown, _retries = 0, outputStarted = false): string {
   const message = errorText(error);
   if (/\babort(?:ed|ing)\b|cancel(?:led|ed)|request aborted/i.test(message)) return 'LMM request cancelled.';
+  if (/IP_ACCESS_ROUTE_REJECTED|IP access policy/i.test(message)) return 'LMM request was blocked by the current IP access policy. Change network or ask the administrator to allow this IP.';
   const status = errorStatus(error, message);
   if (status === 401) return 'LMM authorization expired or was revoked. Run /login again.';
   if (status === 403) return 'This LMM account is not allowed to use the selected model. Run /login again or choose another model.';
@@ -54,9 +55,7 @@ function publicErrorMessage(error: unknown, retries = 0, outputStarted = false):
   if (status !== undefined && status >= 500) return `LMM upstream is temporarily unavailable (HTTP ${status}). Try again shortly.`;
   if (isTransportFailure(error)) {
     if (outputStarted) return 'LMM stream disconnected after output started. The partial request was not replayed to avoid duplicate billing; try again.';
-    return retries >= MAX_MODEL_REQUEST_RETRIES
-      ? `LMM stream disconnected before completion after ${MAX_MODEL_REQUEST_RETRIES} retries. Try again later.`
-      : 'LMM stream disconnected before completion. Retrying may succeed.';
+    return 'LMM stream disconnected before completion. The request was not replayed to avoid duplicate billing; try again manually.';
   }
   return 'LMM model request failed. Check authorization, account access, and server availability.';
 }
