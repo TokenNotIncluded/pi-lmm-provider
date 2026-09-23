@@ -2,38 +2,40 @@
 
 Use [LMM](https://api.lmm.best) models from Pi's native provider and model selector. Authentication runs through browser OAuth with a loopback callback and PKCE, so the extension never asks you to paste an API key into Pi.
 
-This is an alpha release for Pi 0.85.1. See [Preview status](#preview-status) before relying on it for production work.
+This is an alpha release tested with Pi 0.87.1 and compatible with Pi 0.86.1. See [Preview status](#preview-status) before relying on it for production work.
 
 ## Requirements
 
-- Pi 0.85.1
-- Node.js 22.18.0 or newer
+- Pi 0.86.1 or 0.87.1
+- Node.js 22.19.0 or newer
 - An LMM account
 
 ## Install
 
-Install the npm alpha release:
+Install the npm alpha release with the source-switching installer:
 
 ```sh
-pi install npm:@tokennotincluded/pi-lmm-provider@alpha
+npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider npm:@tokennotincluded/pi-lmm-provider@alpha
 ```
 
-You can also install the latest development version from GitHub:
+To use GitHub instead:
 
 ```sh
-pi install git:github.com/TokenNotIncluded/pi-lmm-provider
+npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider git:github.com/TokenNotIncluded/pi-lmm-provider
 ```
 
-To update an existing installation:
+For a local checkout:
+
+```sh
+npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider /absolute/path/to/pi-lmm-provider
+```
+
+Add `--local` at the end to install for the current project. The installer first installs the chosen source, then removes other configured copies of this exact package from the user and current-project scopes. If the new install fails, it leaves the old copies configured. It does not remove unrelated packages. Restart Pi after switching sources. Direct `pi install` commands do not perform this cleanup; if you used one, run the source-switching command above once to reconcile the copies.
+
+To update one already-selected source without switching it:
 
 ```sh
 pi update npm:@tokennotincluded/pi-lmm-provider
-```
-
-For local development, install a checkout directly:
-
-```sh
-pi install /absolute/path/to/pi-lmm-provider
 ```
 
 ## Use

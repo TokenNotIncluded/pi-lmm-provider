@@ -1,6 +1,6 @@
 {
   "name": "@tokennotincluded/pi-lmm-provider",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "LMM OAuth provider for Pi's native model selector (integration-gated preview)",
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -19,10 +19,13 @@
     "lmm"
   ],
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=22.19.0"
   },
   "exports": {
     ".": "./src/index.ts"
+  },
+  "bin": {
+    "lmm-pi-provider": "./scripts/install.mjs"
   },
   "pi": {
     "extensions": [
@@ -31,22 +34,23 @@
   },
   "files": [
     "src/*.ts",
+    "scripts/install.mjs",
     "README.md",
     "CONTRACT_GAPS.md",
     "LICENSE"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-ai": "^0.86.1",
-    "@earendil-works/pi-coding-agent": "^0.86.1"
+    "@earendil-works/pi-ai": ">=0.86.1 <0.88.0",
+    "@earendil-works/pi-coding-agent": ">=0.86.1 <0.88.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.86.1",
-    "@earendil-works/pi-coding-agent": "0.86.1",
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
     "@types/node": "26.1.1",
     "@typescript/native-preview": "7.0.0-dev.20260707.2"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts test/*.test.mjs",
     "typecheck": "tsgo --noEmit",
     "pack:check": "npm pack --dry-run --ignore-scripts",
     "test:pi": "node scripts/test-pi.mjs"
