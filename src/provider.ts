@@ -33,8 +33,18 @@ function validCost(cost: Readonly<Model<Api>['cost']>): boolean {
     Number.isSafeInteger(tier.inputTokensAbove) && tier.inputTokensAbove >= 0 && validRates(tier));
 }
 
-function cachedEntry(model: Readonly<Model<Api>>, updatedAt: number): CatalogEntry | undefined {
+// Newer Pi stores chat, classifier and image models together. Only chat entries
+// can become an LMM streaming model; older Pi chat entries have no type field.
+function isCachedChatModel(model: unknown): model is Readonly<Model<Api>> {
+  return typeof model === 'object' && model !== null &&
+    (!('type' in model) || model.type === 'chat') &&
+    'reasoning' in model && typeof model.reasoning === 'boolean' &&
+    'maxTokens' in model && typeof model.maxTokens === 'number';
+}
+
+function cachedEntry(model: unknown, updatedAt: number): CatalogEntry | undefined {
   try {
+    if (!isCachedChatModel(model)) return undefined;
     if (model.provider !== PROVIDER_ID || !(SUPPORTED_APIS as readonly string[]).includes(model.api)) return undefined;
     const parts = model.id.split(' / ');
     if (parts.length !== 2) return undefined;

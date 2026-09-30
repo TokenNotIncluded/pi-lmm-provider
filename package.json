@@ -1,6 +1,6 @@
 {
   "name": "@tokennotincluded/pi-lmm-provider",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "LMM OAuth provider for Pi's native model selector (integration-gated preview)",
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -40,12 +40,12 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.86.1 <0.88.0",
-    "@earendil-works/pi-coding-agent": ">=0.86.1 <0.88.0"
+    "@earendil-works/pi-ai": ">=0.86.1",
+    "@earendil-works/pi-coding-agent": ">=0.86.1"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.87.1",
-    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@earendil-works/pi-ai": "0.99.2",
+    "@earendil-works/pi-coding-agent": "0.99.2",
     "@types/node": "26.1.1",
     "@typescript/native-preview": "7.0.0-dev.20260707.2"
   },

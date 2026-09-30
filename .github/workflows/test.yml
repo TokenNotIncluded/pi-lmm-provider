@@ -9,6 +9,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        pi: ['0.86.1', '0.87.1', latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,6 +22,9 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Test the selected official Pi host
+        run: npm install --no-save --package-lock=false --ignore-scripts "@earendil-works/pi-ai@${{ matrix.pi }}" "@earendil-works/pi-coding-agent@${{ matrix.pi }}"
       - run: npm run typecheck
       - run: npm test
       - run: npm run pack:check
+      - run: npm run test:pi
