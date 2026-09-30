@@ -247,11 +247,12 @@ test('restores a session-bound catalog and retains it when a rotated-token refre
   // Even a malformed classifier/image entry advertising a chat API must not
   // be restored as an authorized LMM chat model.
   for (const type of ['classifier', 'image']) {
+    const nonChatModel = { ...stored!.models[0]!, type };
     const nonChat = new LmmIntegration({ issuer, capabilities, fetch: async () => { throw new Error('offline'); } });
     try {
       await nonChat.provider.refreshModels!({
         ...context(rotated, false),
-        stored: { ...stored!, models: [{ ...stored!.models[0]!, type }] as typeof stored.models },
+        stored: { ...stored!, models: [nonChatModel] as typeof stored.models },
       });
       assert.equal(nonChat.provider.getModels().length, 0, `${type} cannot become a chat model`);
     } finally { nonChat.dispose(); }
