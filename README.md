@@ -12,16 +12,16 @@ This is an alpha release last tested with Pi 0.86.1, 0.87.1 and 0.99.2. Newer re
 
 ## Install
 
-Install the npm alpha release with the source-switching installer:
-
-```sh
-npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider npm:@tokennotincluded/pi-lmm-provider@alpha
-```
-
-To use GitHub instead:
+Install the current GitHub provider with the source-switching installer (the npm package supplies only the installer):
 
 ```sh
 npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider git:github.com/TokenNotIncluded/pi-lmm-provider
+```
+
+To use the separately published npm alpha instead (which may lag behind GitHub fixes):
+
+```sh
+npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider npm:@tokennotincluded/pi-lmm-provider@alpha
 ```
 
 For a local checkout:
