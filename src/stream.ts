@@ -1,10 +1,9 @@
 import {
-  createAssistantMessageEventStream,
+  createAssistantMessageEventStream, normalizeContext,
   type Api, type AssistantMessage, type AssistantMessageEvent, type Model, type TranscriptContext,
   type ProviderHeaders, type ProviderStreamOptions, type ProviderStreams, type StreamOptions,
 } from '@earendil-works/pi-ai';
 import { anthropicMessagesApi, openAICompletionsApi, openAIResponsesApi } from '@earendil-works/pi-ai/compat';
-import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript';
 import type { Admission } from './catalog.ts';
 import { mergeCacheCompat } from './cache.ts';
 import type { LmmHttp } from './http.ts';
