@@ -99,3 +99,12 @@ test('an available apply_patch command still executes; custom bash environments 
     assert.equal(await readFile(join(cwd, 'custom-ran'), 'utf8'), '');
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
+
+test('older hosts without effective shell settings keep guidance without probing the wrong shell', async () => {
+  let handler: any;
+  registerToolGuard({
+    on(_name: string, callback: any) { handler = callback; },
+    getAllTools: () => [{ name: 'bash', sourceInfo: { path: 'builtin:bash' } }],
+  } as unknown as ExtensionAPI);
+  assert.equal(await handler({ toolName: 'bash', input: { command: 'apply_patch' } }, { model: { provider: 'lmm' } }), undefined);
+});

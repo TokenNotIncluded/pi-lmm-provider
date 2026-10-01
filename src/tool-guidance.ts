@@ -26,7 +26,11 @@ export function registerToolGuard(pi: ExtensionAPI): void {
     // Custom/remote bash tools can use another filesystem and executable search path.
     const bash = pi.getAllTools().find((tool) => tool.name === 'bash');
     if (bash?.sourceInfo?.path !== 'builtin:bash') return;
-    const settings = pi.getSettings();
+    // Earlier supported Pi hosts expose no effective shell settings API.
+    // Keep guidance there rather than probing a potentially different shell.
+    const getSettings: unknown = Reflect.get(pi, 'getSettings');
+    if (typeof getSettings !== 'function') return;
+    const settings = getSettings.call(pi) as { shellPath?: string; shellCommandPrefix?: string };
     const command = event.input.command;
     if (typeof command !== 'string') return;
     if (/^\s*apply_patch(?:\s|$)/.test(command)) {
@@ -36,7 +40,7 @@ export function registerToolGuard(pi: ExtensionAPI): void {
       });
       try {
         const result = await probe.execute('lmm-apply-patch-probe', { command: 'command -v apply_patch >/dev/null 2>&1', timeout: 5 });
-        if (result.isError) throw new Error('apply_patch probe failed');
+        if (Reflect.get(result, 'isError') === true) throw new Error('apply_patch probe failed');
       } catch {
         const files = pi.getActiveTools().filter((name) => name === 'write' || name === 'edit');
         return { block: true, reason: `apply_patch is unavailable in the current Pi bash environment. ${files.length ? `Use the active native ${files.join('/')} tools with their supplied schemas.` : 'Native write/edit tools are not active; do not assume an undeclared tool is available.'} The command was blocked before execution; no file was created by it.` };
