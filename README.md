@@ -67,9 +67,9 @@ Models using server-side variable billing remain selectable when Pi has an exact
 
 A `pi-cache-optimizer` warning about missing `supportsLongCacheRetention` or `sendSessionAffinityHeaders` is a cache advisory, not evidence that OAuth or a model request failed. Run `/lmm-cache` to inspect the selected model's merged flags and open this help. That command does not read credentials, contact LMM, or trigger an assistant turn. The warning originates in the separate optimizer extension; LMM does not suppress its messages.
 
-The reviewed domestic DeepSeek V4 and GLM 5.3 profiles already enable both flags. After an upgrade, restart Pi, open `/model`, select the model again, and inspect `/lmm-cache` before adding an override. Do not reauthorize solely because of this cache warning. An actual 401/403 or request error needs separate diagnosis.
+LMM's OpenAI Chat Completions gateway enables `sendSessionAffinityHeaders` by default for every admitted model, including `GPT-Pro / gpt-6-astra`. This is a gateway routing setting independent of the vendor model metadata. The reviewed domestic DeepSeek V4 and GLM 5.3 profiles also enable long cache retention. After an upgrade, restart Pi, open `/model`, select the model again, and inspect `/lmm-cache` before adding an override. Do not reauthorize solely because of this cache warning. An actual 401/403 or request error needs separate diagnosis.
 
-For another route, set `supportsLongCacheRetention` to `true` only when the gateway and backing model accept the adapter's long-retention fields. Set `sendSessionAffinityHeaders` to `true` only when the gateway supports Pi's session-affinity headers. Model names alone do not prove support. These flags request behavior; they neither enable caching on an unsupported server nor guarantee savings. Session-affinity headers identify a session, not an OAuth credential.
+For another route, set `supportsLongCacheRetention` to `true` only when the gateway and backing model accept the adapter's long-retention fields. Use `sendSessionAffinityHeaders: false` to opt out for a route that should not send session headers. Model names alone do not prove support. These flags request behavior; they neither enable caching on an unsupported server nor guarantee savings. Session-affinity headers identify a session, not an OAuth credential.
 
 Edit `~/.pi/agent/models.json` (or `models.json` in your configured Pi agent directory). Merge the `providers.lmm` entries below into your existing file rather than overwriting other providers. Use the exact readable ID shown under LMM in `/model`, including the group and spaces, but without the leading `lmm/` provider label. Unknown IDs do not add or authorize a model.
 
@@ -137,3 +137,9 @@ npm run pack:check
 ```
 
 The server-side OAuth contract is documented in the [LMM API repository](https://github.com/TokenNotIncluded/api.lmm.best/blob/main/apps/api-go/service/oauth_contract.md).
+
+## Native Pi file tools
+
+The LMM extension reminds the selected LMM model to use Pi's active `write` and `edit` tools and their current schemas. `apply_patch` is a tool name in some other hosts; it is not automatically an executable in Pi's `bash` environment. If a file write fails, the model should recover and verify the file before opening a preview. This instruction reduces host confusion but cannot guarantee a model follows it. No shell executable is installed and disabled file tools remain disabled.
+
+On Pi hosts exposing effective shell settings, for LMM models using Pi's local built-in `bash`, a `tool_call` guard also checks direct `apply_patch` commands before execution. If the command is unavailable in that shell, the call is blocked with guidance to use the active native file tools. An existing command is allowed. A standalone `xdg-open` with a literal missing local file is also blocked until the file exists. These are narrow checks, not a general shell parser: custom/remote bash tools, shell prefixes that can change filesystem visibility, and compound preview commands retain prompt guidance only.

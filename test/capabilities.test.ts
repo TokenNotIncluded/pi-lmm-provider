@@ -111,3 +111,12 @@ test('enables cache retention and session affinity for domestic DeepSeek V4 gate
   assert.equal(compat.thinkingFormat, 'deepseek');
   assert.equal(compat.requiresReasoningContentOnAssistantMessages, true);
 });
+
+test('LMM chat gateway supplies affinity across vendor models without enabling long retention', () => {
+  for (const id of ['gpt-6-astra', 'gpt-4o', 'claude-sonnet-4-6', 'gemini-3.7-flash']) {
+    const result = resolveKnownCapabilities(entry(id, ['openai-completions'], 'GPT-Pro'));
+    assert.ok(result, id);
+    assert.equal(Reflect.get(result.compat, 'sendSessionAffinityHeaders'), true, id);
+    assert.notEqual(Reflect.get(result.compat, 'supportsLongCacheRetention'), true, id);
+  }
+});
