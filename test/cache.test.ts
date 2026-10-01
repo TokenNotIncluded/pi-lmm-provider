@@ -37,16 +37,19 @@ const catalog = {
   })),
 };
 
-async function fixture(config: unknown) {
+async function fixture(config: unknown, upstreamModel?: string) {
   const directory = await mkdtemp(join(tmpdir(), 'lmm-cache-'));
   const requests: { headers: Headers; body: Record<string, unknown> }[] = [];
   const integration = new LmmIntegration({
     issuer, refreshJournalDirectory: join(directory, 'journal'),
-    capabilities: () => ({ api: 'openai-completions', contextWindow: 4096, maxTokens: 512,
+    capabilities: upstreamModel ? undefined : () => ({ api: 'openai-completions', contextWindow: 4096, maxTokens: 512,
       reasoning: false, input: ['text'], compat: { ...flags(false), supportsDeveloperRole: false }, provenance: 'test fixture' }),
     fetch: async (input, init) => {
       const url = input instanceof Request ? input.url : String(input);
-      if (url.endsWith('/catalog')) return json(catalog);
+      if (url.endsWith('/catalog')) return json(upstreamModel ? { ...catalog, models: [
+        { ...catalog.models[0], upstream_model: upstreamModel, name: upstreamModel,
+          id: `lmm:${groupId}:${Buffer.from(upstreamModel).toString('base64url')}` },
+      ] } : catalog);
       if (url.endsWith('/balance')) return json({ schema_version: 1, currency: 'platform_credit', balance: 1,
         quota: 1, quota_per_unit: 1, updated_at: 1, authorization_limit: null });
       assert.equal(url, `${issuer}/v1/chat/completions`);
@@ -170,3 +173,24 @@ test('cache help distinguishes advisory from failure and never prints credential
   assert.ok(advice.includes(CACHE_HELP));
   assert.doesNotMatch(advice, /lmm_at_/);
 });
+
+for (const override of [undefined, false] as const) {
+  test(`Astra default affinity reaches the real adapter (override ${override})`, async () => {
+    const id = `${group} / gpt-6-astra`;
+    const config = override === undefined ? { providers: {} } : { providers: { lmm: {
+      modelOverrides: { [id]: { compat: { sendSessionAffinityHeaders: override } } },
+    } } };
+    const f = await fixture(config, 'gpt-6-astra');
+    try {
+      const selected = f.runtime.getModel('lmm', id)!;
+      assert.ok(selected);
+      assert.equal(cacheFlags(selected.compat).sendSessionAffinityHeaders, override ?? true);
+      const request = await invoke(f, selected);
+      for (const key of ['session_id', 'x-client-request-id', 'x-session-affinity']) {
+        assert.equal(request.headers.get(key), override === false ? null : 'cache-session', key);
+      }
+      assert.equal(request.body.model, 'gpt-6-astra');
+      assert.equal(request.headers.get('authorization'), `Bearer ${token}`);
+    } finally { await f.dispose(); }
+  });
+}

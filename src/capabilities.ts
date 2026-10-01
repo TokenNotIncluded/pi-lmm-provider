@@ -19,7 +19,10 @@ const fallbackSources: readonly Source[] = getBuiltinProviders()
   .filter((provider) => !preferredProviders.has(provider))
   .map((provider) => [provider, new Map(getBuiltinModels(provider).map((model) => [model.id, model]))]);
 
-function gatewayCompat(entry: Parameters<CapabilityResolver>[0], compat: NonNullable<Model<Api>['compat']>) {
+function gatewayCompat(entry: Parameters<CapabilityResolver>[0], api: LmmApi, compat: NonNullable<Model<Api>['compat']>) {
+  // Affinity belongs to LMM's proxy transport, not the upstream vendor catalog.
+  // The relay keeps these session headers; explicit models.json false wins later.
+  if (api === 'openai-completions') compat = { ...compat, sendSessionAffinityHeaders: true };
   const domesticGroup = entry.group === '国产[Kimi/Deepseek/GLM]';
   const deepSeekV4 = /^deepseek-v4-(?:flash|pro)(?:-.+)?$/.test(entry.upstream_model);
   if (domesticGroup && (deepSeekV4 || entry.upstream_model === 'glm-5.3' || entry.upstream_model === 'glm-5.3-flash')) {
@@ -48,7 +51,7 @@ function candidates(entry: Parameters<CapabilityResolver>[0], sources: readonly 
     // protocol upstream. Preserve the vendor's reasoning metadata even when
     // the wire protocol differs; otherwise Pi hides every thinking level and
     // never sends reasoning_effort for models such as GPT-6 Astra.
-    const compat = gatewayCompat(entry, nativeProtocol ? structuredClone(model.compat ?? {}) : {
+    const compat = gatewayCompat(entry, nativeProtocol ? model.api as LmmApi : 'openai-completions', nativeProtocol ? structuredClone(model.compat ?? {}) : {
       supportsDeveloperRole: false, supportsStore: false,
       supportsReasoningEffort: model.reasoning,
       maxTokensField: provider === 'openai' ? 'max_completion_tokens' as const : 'max_tokens' as const,
