@@ -1,5 +1,5 @@
 import {
-  createAssistantMessageEventStream,
+  createAssistantMessageEventStream, normalizeContext,
   type Api, type AssistantMessage, type AssistantMessageEvent, type Model, type TranscriptContext,
   type ProviderHeaders, type ProviderStreamOptions, type ProviderStreams, type StreamOptions,
 } from '@earendil-works/pi-ai';
@@ -178,11 +178,11 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
             return { ...object(replacement ?? payload), model: entry.upstream_model, stream: true };
           },
         };
-        const wireContext: TranscriptContext = {
+        const wireContext: TranscriptContext = normalizeContext({
           ...context,
           messages: context.messages.map((message) => message.role === 'assistant' && message.provider === PROVIDER_ID && message.model === selected.id
             ? { ...message, model: entry.upstream_model } : message),
-        };
+        });
         while (true) {
           options.signal?.throwIfAborted();
           responseStatus = undefined;

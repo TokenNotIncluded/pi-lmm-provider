@@ -2,26 +2,26 @@
 
 Use [LMM](https://api.lmm.best) models from Pi's native provider and model selector. Authentication runs through browser OAuth with a loopback callback and PKCE, so the extension never asks you to paste an API key into Pi.
 
-This is an alpha release tested with Pi 0.87.1 and compatible with Pi 0.86.1. See [Preview status](#preview-status) before relying on it for production work.
+This is an alpha release last tested with Pi 0.86.1, 0.87.1 and 0.99.2. Newer releases are not blocked by a version ceiling. See [Preview status](#preview-status) before relying on it for production work.
 
 ## Requirements
 
-- Pi 0.86.1 or 0.87.1
+- Pi 0.86.1 or newer; the latest official release is tested in CI
 - Node.js 22.19.0 or newer
 - An LMM account
 
 ## Install
 
-Install the npm alpha release with the source-switching installer:
-
-```sh
-npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider npm:@tokennotincluded/pi-lmm-provider@alpha
-```
-
-To use GitHub instead:
+Install the current GitHub provider with the source-switching installer (the npm package supplies only the installer):
 
 ```sh
 npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider git:github.com/TokenNotIncluded/pi-lmm-provider
+```
+
+To use the separately published npm alpha instead (which may lag behind GitHub fixes):
+
+```sh
+npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider npm:@tokennotincluded/pi-lmm-provider@alpha
 ```
 
 For a local checkout:

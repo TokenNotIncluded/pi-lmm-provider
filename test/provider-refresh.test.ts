@@ -243,6 +243,21 @@ test('restores a session-bound catalog and retains it when a rotated-token refre
     assert.equal(offline.provider.filterModels!(offline.provider.getModels(), rotated).length, 1);
   } finally { offline.dispose(); }
 
+  // Pi 0.99 stores non-chat model families in the same persistent catalog.
+  // Even a malformed classifier/image entry advertising a chat API must not
+  // be restored as an authorized LMM chat model.
+  for (const type of ['classifier', 'image']) {
+    const nonChatModel = { ...stored!.models[0]!, type };
+    const nonChat = new LmmIntegration({ issuer, capabilities, fetch: async () => { throw new Error('offline'); } });
+    try {
+      await nonChat.provider.refreshModels!({
+        ...context(rotated, false),
+        stored: { ...stored!, models: [nonChatModel] as typeof stored.models },
+      });
+      assert.equal(nonChat.provider.getModels().length, 0, `${type} cannot become a chat model`);
+    } finally { nonChat.dispose(); }
+  }
+
   const otherAccount = new LmmIntegration({ issuer, capabilities, fetch: async () => { throw new Error('offline'); } });
   try {
     await otherAccount.provider.refreshModels!({
