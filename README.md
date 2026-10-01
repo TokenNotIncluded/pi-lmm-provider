@@ -137,3 +137,7 @@ npm run pack:check
 ```
 
 The server-side OAuth contract is documented in the [LMM API repository](https://github.com/TokenNotIncluded/api.lmm.best/blob/main/apps/api-go/service/oauth_contract.md).
+
+## Native Pi file tools
+
+The LMM extension reminds the selected LMM model to use Pi's active `write` and `edit` tools and their current schemas. `apply_patch` is a tool name in some other hosts; it is not automatically an executable in Pi's `bash` environment. If a file write fails, the model should recover and verify the file before opening a preview. This instruction reduces host confusion but cannot guarantee a model follows it. No shell executable is installed and disabled file tools remain disabled.

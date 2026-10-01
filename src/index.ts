@@ -3,6 +3,7 @@ import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { join } from 'node:path';
 import { LmmIntegration } from './provider.ts';
 import { cacheAdvice } from './cache.ts';
+import { registerToolGuidance } from './tool-guidance.ts';
 import { PROVIDER_ID, boundedSignal, safeMessage } from './protocol.ts';
 import { bearerFromHeaders } from './stream.ts';
 
@@ -18,6 +19,7 @@ export default function lmmExtension(pi: ExtensionAPI): void {
     },
   });
   pi.registerProvider(integration.provider);
+  registerToolGuidance(pi);
 
   pi.on('session_start', async (_event, ctx) => {
     context = ctx;
