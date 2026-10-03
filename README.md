@@ -47,6 +47,7 @@ pi update npm:@tokennotincluded/pi-lmm-provider
 The extension also provides these commands:
 
 - `/lmm-prices` refreshes the account-specific model catalog and displays current pricing.
+- `/lmm-diagnostics` displays the latest request model, sent `reasoning_effort`, gateway-reported model names, and whether a leading thinking wrapper was repaired. It makes no network requests.
 - `/lmm-cache` displays the selected model's cache settings and help without making network requests.
 - `/lmm-revoke` revokes the server authorization after interactive confirmation.
 - `/logout` removes the local Pi login.
@@ -62,6 +63,16 @@ After upgrading from an older alpha, restart Pi and run `/model` or `/lmm-prices
 For the domestic DeepSeek V4 and reviewed GLM 5.3 entries, the provider also enables long prompt-cache retention and session-affinity headers. These request cache-friendly behavior from the gateway; they do not guarantee a particular worker, retention duration, cache hit, or lower charge. See [Cache compatibility](#cache-compatibility) for overrides and the `pi-cache-optimizer` advisory.
 
 Models using server-side variable billing remain selectable when Pi has an exact official model match. Their names include `LMM variable billing`. Pi shows a public reference estimate, while the LMM wallet settlement is authoritative. Wallet values are platform credit, not spendable US dollars.
+
+## Thinking display and model diagnostics
+
+For Chat Completions streams, a leading `<thinking>...</thinking>` wrapper in assistant text is recovered into Pi's thinking field as it arrives, including tags split across SSE frames. Existing reasoning fields are preserved. Tags inside ordinary prose or Markdown code fences remain literal. An unclosed leading wrapper is treated as thinking until the response ends; partial closing tags are retained rather than discarded. Only an exact leading wrapper is recognized, so a literal leading wrapper example should be fenced as code.
+
+If an SSE event exceeds the one-million-character inspection limit, any previously held text is flushed and that event plus the rest of the stream passes through without further thinking recovery or model-name inspection. Earlier recovered thinking remains intact. This keeps buffering bounded and avoids guessing the wrapper state after an uninspected event.
+
+Every LMM response stores `lmmDiagnostics` with the requested model, protocol, sent `reasoning_effort` when present, up to eight gateway-reported model identifiers, and whether thinking recovery occurred. Diagnostics do not copy request headers, prompts, or raw response bodies. Reported names are limited in length and characters, and obvious credential prefixes or authorization expressions are rejected; these checks cannot identify every possible secret mislabeled by a gateway as a model name. `/lmm-diagnostics` shows the latest request captured during the current session. A different gateway name produces an advisory; aliases and dated model snapshots can legitimately differ. Gateway model names are declarations, not proof of the backing model. Missing names are shown as not reported. The existing Pi `responseModel` field is preserved.
+
+The relay continues to send the selected catalog model and never switches models during retries. Diagnostics do not change routing or authorize fallback models.
 
 ## Cache compatibility
 

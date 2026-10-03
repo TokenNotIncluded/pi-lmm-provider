@@ -6,11 +6,13 @@ import { cacheAdvice } from './cache.ts';
 import { registerToolGuidance, registerToolGuard } from './tool-guidance.ts';
 import { PROVIDER_ID, boundedSignal, safeMessage } from './protocol.ts';
 import { bearerFromHeaders } from './stream.ts';
+import { diagnosticsReport, type DiagnosticMessage, type RelayDiagnostics } from './response.ts';
 
 /** Native Pi provider entry. No account credentials are read from environment variables. */
 export default function lmmExtension(pi: ExtensionAPI): void {
   let context: ExtensionContext | undefined;
   let latestStatus: string | undefined;
+  let latestDiagnostics: RelayDiagnostics | undefined;
   const integration = new LmmIntegration({
     refreshJournalDirectory: join(getAgentDir(), 'lmm-refresh-journal'),
     onStatus(status) {
@@ -24,6 +26,7 @@ export default function lmmExtension(pi: ExtensionAPI): void {
 
   pi.on('session_start', async (_event, ctx) => {
     context = ctx;
+    latestDiagnostics = undefined;
     if (ctx.hasUI) ctx.ui.setStatus(PROVIDER_ID, latestStatus);
     const result = await ctx.modelRegistry.refresh({
       providers: [PROVIDER_ID], allowNetwork: true, signal: boundedSignal(ctx.signal),
@@ -34,6 +37,25 @@ export default function lmmExtension(pi: ExtensionAPI): void {
       const readableModel = integration.modelForLegacyId(ctx.model.id);
       if (readableModel) await pi.setModel(readableModel);
     }
+  });
+
+  pi.on('message_end', (event, ctx) => {
+    if (event.message.role !== 'assistant' || event.message.provider !== PROVIDER_ID) return;
+    const diagnostics = (event.message as DiagnosticMessage).lmmDiagnostics;
+    if (!diagnostics) return;
+    latestDiagnostics = structuredClone(diagnostics);
+    const different = diagnostics.reportedModels.filter((name) => name !== diagnostics.requestedModel);
+    if (ctx.hasUI && different.length) {
+      ctx.ui.notify(`LMM requested ${diagnostics.requestedModel}; gateway reported ${different.join(', ')}. Names differ; aliases or snapshots are possible. Run /lmm-diagnostics for details.`, 'warning');
+    }
+  });
+
+  pi.registerCommand('lmm-diagnostics', {
+    description: 'Inspect the last LMM request and gateway model declarations without network requests.',
+    async handler(_args, _ctx) {
+      pi.sendMessage({ customType: 'lmm-diagnostics', display: true,
+        content: latestDiagnostics ? diagnosticsReport(latestDiagnostics) : 'No LMM request diagnostics captured in this session yet. Send a request first.' }, { triggerTurn: false });
+    },
   });
 
   pi.registerCommand('lmm-cache', {

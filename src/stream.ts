@@ -6,6 +6,7 @@ import {
 import { anthropicMessagesApi, openAICompletionsApi, openAIResponsesApi } from '@earendil-works/pi-ai/compat';
 import type { Admission } from './catalog.ts';
 import { mergeCacheCompat } from './cache.ts';
+import { inspectResponse, type DiagnosticMessage, type RelayDiagnostics } from './response.ts';
 import type { LmmHttp } from './http.ts';
 import { PROVIDER_ID, LmmError, accessToken, object, requireValue, type LmmApi } from './protocol.ts';
 import { MAX_MODEL_REQUEST_RETRIES, parseRetryAfter, retryDelay, waitForRetry } from './retry.ts';
@@ -88,8 +89,9 @@ function errorMessage(model: Model<Api>, aborted: boolean, error?: unknown, retr
   };
 }
 
-function rebind(message: AssistantMessage, model: Model<Api>): AssistantMessage {
-  const result = { ...message, provider: PROVIDER_ID, model: model.id, api: model.api };
+function rebind(message: AssistantMessage, model: Model<Api>, diagnostics?: RelayDiagnostics): AssistantMessage {
+  const result: DiagnosticMessage = { ...message, provider: PROVIDER_ID, model: model.id, api: model.api,
+    ...(diagnostics ? { lmmDiagnostics: structuredClone(diagnostics) } : {}) };
   // Upstream errors can echo headers / credentials. Never print raw provider errors.
   if (result.stopReason === 'error' || result.stopReason === 'aborted') {
     result.errorMessage = result.stopReason === 'aborted' ? 'LMM request cancelled.' : publicErrorMessage(result.errorMessage);
@@ -97,10 +99,10 @@ function rebind(message: AssistantMessage, model: Model<Api>): AssistantMessage 
   return result;
 }
 
-function rebindEvent(event: AssistantMessageEvent, model: Model<Api>): AssistantMessageEvent {
-  if (event.type === 'done') return { ...event, message: rebind(event.message, model) };
-  if (event.type === 'error') return { ...event, error: rebind(event.error, model) };
-  if ('partial' in event) return { ...event, partial: rebind(event.partial, model) };
+function rebindEvent(event: AssistantMessageEvent, model: Model<Api>, diagnostics?: RelayDiagnostics): AssistantMessageEvent {
+  if (event.type === 'done') return { ...event, message: rebind(event.message, model, diagnostics) };
+  if (event.type === 'error') return { ...event, error: rebind(event.error, model, diagnostics) };
+  if ('partial' in event) return { ...event, partial: rebind(event.partial, model, diagnostics) };
   return event;
 }
 
@@ -119,6 +121,7 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
       let streamStarted = false;
       let providerAborted = false;
       let partial: AssistantMessage | undefined;
+      let diagnostics: RelayDiagnostics | undefined;
       let responseStatus: number | undefined;
       let responseRetryAfter: number | undefined;
       try {
@@ -134,6 +137,7 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
             'Requested output exceeds the verified LMM model capability.');
         }
         const api = model.api;
+        diagnostics = { requestedModel: entry.upstream_model, api, reportedModels: [], recoveredThinking: false };
         const wire: Model<Api> = { ...structuredClone(model), id: entry.upstream_model, headers: undefined };
         wire.compat = mergeCacheCompat(wire.compat, selected.compat);
         const path = api === 'anthropic-messages' ? '/v1/messages' : api === 'openai-responses' ? '/v1/responses' : '/v1/chat/completions';
@@ -165,7 +169,7 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
           // retry metadata here; never retain or log the upstream error body.
           responseStatus = response.ok ? undefined : response.status;
           responseRetryAfter = parseRetryAfter(response.headers.get('retry-after'));
-          return response;
+          return response.ok && diagnostics ? inspectResponse(response, diagnostics) : response;
         };
         const originalOnPayload = options.onPayload;
         const wireOptions: ProviderStreamOptions = {
@@ -175,7 +179,9 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
           maxRetries: 0,
           onPayload: async (payload, payloadModel) => {
             const replacement = await originalOnPayload?.(payload, payloadModel);
-            return { ...object(replacement ?? payload), model: entry.upstream_model, stream: true };
+            const body: Record<string, unknown> = { ...object(replacement ?? payload), model: entry.upstream_model, stream: true };
+            if (diagnostics) diagnostics.reasoningEffort = typeof body.reasoning_effort === 'string' ? body.reasoning_effort : undefined;
+            return body;
           },
         };
         const wireContext: TranscriptContext = normalizeContext({
@@ -203,11 +209,11 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
               // Even `start` (and terminal-only output) permanently forbids a replay.
               streamStarted = true;
               if ('partial' in event) partial = event.partial;
-              output.push(rebindEvent(event, selected));
+              output.push(rebindEvent(event, selected, diagnostics));
             }
             const result = await source.result();
             if (result.stopReason === 'error' || result.stopReason === 'aborted') throw result;
-            output.end(rebind(result, selected));
+            output.end(rebind(result, selected, diagnostics));
             break;
           } catch (error) {
             if (options.signal?.aborted || providerAborted || isAborted(error)) {
@@ -226,10 +232,13 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
         }
       } catch (error) {
         const aborted = options.signal?.aborted === true || providerAborted || isAborted(error);
-        const message = errorMessage(selected, aborted, error, attempt, streamStarted);
+        const message: DiagnosticMessage = errorMessage(selected, aborted, error, attempt, streamStarted);
+        if (diagnostics) message.lmmDiagnostics = structuredClone(diagnostics);
         if (partial) {
           message.content = partial.content;
           message.usage = partial.usage;
+          message.responseModel = partial.responseModel;
+          message.responseId = partial.responseId;
         }
         if (!aborted && error instanceof LmmError) message.errorMessage = error.message;
         output.push({ type: 'error', reason: aborted ? 'aborted' : 'error', error: message });
