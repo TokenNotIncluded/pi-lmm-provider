@@ -1,0 +1,41 @@
+name: Validate Pi upgrade
+on:
+  push:
+    branches: [chore/plugin-compat-20261006]
+    paths: [.github/compatibility-upgrade.patch, .github/workflows/compatibility-upgrade.yml]
+permissions:
+  contents: write
+jobs:
+  upgrade:
+    if: github.ref == 'refs/heads/chore/plugin-compat-20261006'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/plugin-compat-20261006
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Apply reviewed source update and regenerate lockfile
+        run: |
+          set -euo pipefail
+          sed -i 's/^ diff --git/diff --git/' .github/compatibility-upgrade.patch
+          git apply --check .github/compatibility-upgrade.patch
+          git apply .github/compatibility-upgrade.patch
+          npm install --ignore-scripts --no-audit --no-fund
+      - name: Validate Pi 1.0.4
+        run: |
+          npm run typecheck
+          npm test
+          npm run pack:check
+          npm run test:pi
+      - name: Commit tested sources and lockfile only to the upgrade branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/compatibility-upgrade.patch .github/workflows/compatibility-upgrade.yml
+          git add package.json package-lock.json README.md .github/workflows/test.yml scripts/test-pi.mjs
+          git commit -m 'fix: validate Pi 1.0.4 and retain legacy host compatibility'
+          git push origin HEAD:refs/heads/chore/plugin-compat-20261006
