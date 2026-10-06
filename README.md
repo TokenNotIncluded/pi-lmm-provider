@@ -2,7 +2,7 @@
 
 Use [LMM](https://api.lmm.best) models from Pi's native provider and model selector. Authentication runs through browser OAuth with a loopback callback and PKCE, so the extension never asks you to paste an API key into Pi.
 
-This is an alpha release last tested with Pi 0.86.1, 0.87.1 and 0.99.2. Newer releases are not blocked by a version ceiling. See [Preview status](#preview-status) before relying on it for production work.
+This is an alpha release last tested with Pi 0.86.1, 0.87.1, 0.99.2 and 1.0.4. Newer releases are not blocked by a version ceiling. See [Preview status](#preview-status) before relying on it for production work.
 
 ## Requirements
 
