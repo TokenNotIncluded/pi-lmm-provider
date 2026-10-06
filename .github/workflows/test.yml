@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pi: ['0.86.1', '0.87.1', latest]
+        pi: ['0.86.1', '0.87.1', '0.99.2', '1.0.4', latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Test the selected official Pi host
         run: npm install --no-save --package-lock=false --ignore-scripts "@earendil-works/pi-ai@${{ matrix.pi }}" "@earendil-works/pi-coding-agent@${{ matrix.pi }}"
       - run: npm run typecheck
