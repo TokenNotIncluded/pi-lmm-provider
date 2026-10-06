@@ -1,0 +1,75 @@
+diff --git a/.github/workflows/test.yml b/.github/workflows/test.yml
+index bc3e3c2..f544e6f 100644
+--- a/.github/workflows/test.yml
++++ b/.github/workflows/test.yml
+@@ -12,7 +12,7 @@ jobs:
+     strategy:
+       fail-fast: false
+       matrix:
+-        pi: ['0.86.1', '0.87.1', latest]
++        pi: ['0.86.1', '0.87.1', '0.99.2', '1.0.4', latest]
+     steps:
+       - uses: actions/checkout@v4
+         with:
+@@ -21,7 +21,7 @@ jobs:
+         with:
+           node-version: '22'
+           cache: npm
+-      - run: npm ci
++      - run: npm ci --ignore-scripts
+       - name: Test the selected official Pi host
+         run: npm install --no-save --package-lock=false --ignore-scripts "@earendil-works/pi-ai@${{ matrix.pi }}" "@earendil-works/pi-coding-agent@${{ matrix.pi }}"
+       - run: npm run typecheck
+ diff --git a/README.md b/README.md
+index 67f7566..4a995dd 100644
+--- a/README.md
++++ b/README.md
+@@ -2,7 +2,7 @@
+ 
+ Use [LMM](https://api.lmm.best) models from Pi's native provider and model selector. Authentication runs through browser OAuth with a loopback callback and PKCE, so the extension never asks you to paste an API key into Pi.
+ 
+-This is an alpha release last tested with Pi 0.86.1, 0.87.1 and 0.99.2. Newer releases are not blocked by a version ceiling. See [Preview status](#preview-status) before relying on it for production work.
++This is an alpha release last tested with Pi 0.86.1, 0.87.1, 0.99.2 and 1.0.4. Newer releases are not blocked by a version ceiling. See [Preview status](#preview-status) before relying on it for production work.
+ 
+ ## Requirements
+ 
+ diff --git a/package.json b/package.json
+index 77cf8f0..700ecd4 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@tokennotincluded/pi-lmm-provider",
+-  "version": "0.1.0-alpha.3",
++  "version": "0.1.0-alpha.4",
+   "description": "LMM OAuth provider for Pi's native model selector (integration-gated preview)",
+   "type": "module",
+   "license": "AGPL-3.0-only",
+@@ -45,8 +45,8 @@
+     "typebox": "*"
+   },
+   "devDependencies": {
+-    "@earendil-works/pi-ai": "0.99.2",
+-    "@earendil-works/pi-coding-agent": "0.99.2",
++    "@earendil-works/pi-ai": "1.0.4",
++    "@earendil-works/pi-coding-agent": "1.0.4",
+     "@types/node": "26.1.1",
+     "@typescript/native-preview": "7.0.0-dev.20260707.2"
+   },
+ diff --git a/scripts/test-pi.mjs b/scripts/test-pi.mjs
+index 5a5ace4..f4f59a3 100644
+--- a/scripts/test-pi.mjs
++++ b/scripts/test-pi.mjs
+@@ -62,10 +62,10 @@ try {
+       .filter((command) => command.source === 'extension')
+       .map((command) => command.name)
+   )
+-  for (const required of ['lmm-prices', 'lmm-revoke', 'lmm-diagnostics']) {
++  for (const required of ['lmm-prices', 'lmm-revoke', 'lmm-diagnostics', 'lmm-cache']) {
+     if (!names.has(required)) throw new Error(`missing registered command: ${required}`)
+   }
+-  console.log('Pi native loader registered lmm-prices, lmm-revoke and lmm-diagnostics')
++  console.log('Pi native loader registered lmm-prices, lmm-revoke, lmm-diagnostics and lmm-cache')
+ } finally {
+   rmSync(tempRoot, { recursive: true, force: true })
+ }
