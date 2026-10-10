@@ -1,11 +1,13 @@
-import { ExtensionEditorComponent, type ExtensionUIContext, type ExtensionUIDialogOptions,
-  type Theme, type KeybindingsManager } from '@earendil-works/pi-coding-agent';
-import type { Component, TUI } from '@earendil-works/pi-tui';
+import { ExtensionEditorComponent, type ExtensionUIContext, type ExtensionUIDialogOptions } from '@earendil-works/pi-coding-agent';
 import { stripVTControlCharacters } from 'node:util';
 import { REMOTE_KEYS, remoteId, type RemoteCommand, type RemoteEvent } from './remote-wire.ts';
 
-type CustomComponent = Component & { dispose?(): void };
-type CustomFactory<T> = (tui: TUI, theme: Theme, keybindings: KeybindingsManager, done: (result: T) => void) => CustomComponent | Promise<CustomComponent>;
+// Infer the native UI types from the supported host. Older Pi versions use a
+// different TUI package name; the bridge must not import that transitive package.
+type HostCustomFactory = Parameters<ExtensionUIContext['custom']>[0];
+type HostCustomArguments = Parameters<HostCustomFactory>;
+type CustomComponent = Awaited<ReturnType<HostCustomFactory>>;
+type CustomFactory<T> = (tui: HostCustomArguments[0], theme: HostCustomArguments[1], keybindings: HostCustomArguments[2], done: (result: T) => void) => CustomComponent | Promise<CustomComponent>;
 type CustomOptions = Parameters<ExtensionUIContext['custom']>[1];
 type Pending = { message: RemoteEvent; cancel?: () => void; answer?: (command: RemoteCommand) => void; input?: (command: RemoteCommand) => void };
 
