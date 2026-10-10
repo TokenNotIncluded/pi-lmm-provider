@@ -1,0 +1,35 @@
+name: Remote control integration
+on:
+  push:
+    branches: [feat/model-independent-remote-control]
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: plugin
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: TokenNotIncluded/api.lmm.best
+          path: server
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the pinned official Pi host without lifecycle scripts
+        working-directory: plugin
+        run: npm ci --ignore-scripts
+      - name: Export public source and test dependencies for offline integration work
+        if: always()
+        run: tar --exclude=.git -czf /tmp/pi-remote-workspace.tgz plugin server
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pi-remote-workspace
+          path: /tmp/pi-remote-workspace.tgz
+          retention-days: 1
