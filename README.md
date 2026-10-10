@@ -154,3 +154,20 @@ The server-side OAuth contract is documented in the [LMM API repository](https:/
 The LMM extension reminds the selected LMM model to use Pi's active `write` and `edit` tools and their current schemas. `apply_patch` is a tool name in some other hosts; it is not automatically an executable in Pi's `bash` environment. If a file write fails, the model should recover and verify the file before opening a preview. This instruction reduces host confusion but cannot guarantee a model follows it. No shell executable is installed and disabled file tools remain disabled.
 
 On Pi hosts exposing effective shell settings, for LMM models using Pi's local built-in `bash`, a `tool_call` guard also checks direct `apply_patch` commands before execution. If the command is unavailable in that shell, the call is blocked with guidance to use the active native file tools. An existing command is allowed. A standalone `xdg-open` with a literal missing local file is also blocked until the file exists. These are narrow checks, not a general shell parser: custom/remote bash tools, shell prefixes that can change filesystem visibility, and compound preview commands retain prompt guidance only.
+
+
+## Remote control with any model
+
+The extension also connects Pi to the LMM remote-control page. You do **not** need to select an LMM model. Keep your existing provider/model selected.
+
+1. Update the extension and use `/login lmm`. Approve the new remote-control permission. Existing logins must approve it again; old grants do not gain control permission automatically.
+2. Run `/lmm-remote on` on the machine running Pi and confirm. The plugin displays a new session PIN locally. This setting enables automatic connection for future interactive Pi sessions.
+3. Open `https://api.lmm.best/remote-control`, sign in to the same account and enter the PIN. Send tasks, add instructions, stop work and answer plugin questions there.
+
+`/lmm-remote status` displays the current connection and PIN locally. `/lmm-remote off` disables future automatic connections and removes the active relay session. Locking the web page only drops that page's key and messages; it does not stop Pi.
+
+Standard select/confirm/input prompts work directly. Custom terminal components keep their original behavior and receive restricted keyboard or text input; `pi-ask-user` is covered by the SDK integration test. Large terminal views are bounded and not pixel-perfect. Arbitrary mouse, clipboard and upload widgets are not promised. Remote responses must match an active question. A local answer or completed question invalidates older remote responses.
+
+The model catalog, model balance and selected provider do not gate remote credential resolution. Remote transport never calls an LMM model. Normal model-provider charges still apply to tasks you send. The relay is memory-only and requires matching backend/frontend changes; this branch is not a statement that production has been deployed.
+
+Tests: `npm test`, `npm run typecheck`, `npm run test:pi`. For the real Pi 1.0.4 + published ask_user integration, install `pi-ask-user@0.16.0` without lifecycle scripts and run `npm run test:remote`. This uses Pi's deterministic non-LMM test provider, a local encrypted relay and fixture credentials; no production account or paid model request is used.

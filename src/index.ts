@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { join } from 'node:path';
+import { registerRemoteControl } from './remote-control.ts';
 import { LmmIntegration } from './provider.ts';
 import { cacheAdvice } from './cache.ts';
 import { registerToolGuidance, registerToolGuard } from './tool-guidance.ts';
@@ -21,6 +22,7 @@ export default function lmmExtension(pi: ExtensionAPI): void {
     },
   });
   pi.registerProvider(integration.provider);
+  registerRemoteControl(pi, integration, join(getAgentDir(), 'lmm-remote.json'));
   registerToolGuidance(pi);
   registerToolGuard(pi);
 
@@ -28,6 +30,9 @@ export default function lmmExtension(pi: ExtensionAPI): void {
     context = ctx;
     latestDiagnostics = undefined;
     if (ctx.hasUI) ctx.ui.setStatus(PROVIDER_ID, latestStatus);
+    // Remote-only users must not wait for an unrelated LMM catalog refresh.
+    // Login and /lmm-prices still refresh the model provider on demand.
+    if (ctx.model && ctx.model.provider !== PROVIDER_ID) return;
     const result = await ctx.modelRegistry.refresh({
       providers: [PROVIDER_ID], allowNetwork: true, signal: boundedSignal(ctx.signal),
     });

@@ -17,3 +17,8 @@ The installed Pi 0.85.1 native `Models.getAuth` correctly double-checks expiry i
 The package now supports normal automatic refresh through its journal. The journal stores only credential summaries, serializes refreshes and prevents replay after failed rotation. If a crash loses the replacement token after server rotation, the grant may require a fresh `/login`; no plaintext token backup is kept. `/lmm-revoke` is wired to server revocation.
 
 Local installation, host loading, protocol streams and refresh behavior have automated coverage. Production OAuth authorization, model calls, cancellation, account switching, revocation and billing reconciliation still require live acceptance before a stable release.
+
+
+## Remote-control acceptance boundary
+
+Remote control has independent credential resolution and explicit `remote:control` consent. Local tests use official Pi 1.0.4 with the published `pi-ask-user` 0.16.0 component and a non-LMM deterministic provider. They cover actual tool invocation/results, model switching, stop while a question is open, encryption and local disable. A test provider is not a live third-party model endpoint. Production OAuth and deployed web-to-device acceptance remain separate release checks. Remote control is not enabled merely by installing untrusted code; the account authorization and local one-time confirmation remain required.

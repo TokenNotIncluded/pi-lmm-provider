@@ -54,7 +54,8 @@
     "test": "node --experimental-strip-types --test test/*.test.ts test/*.test.mjs",
     "typecheck": "tsgo --noEmit",
     "pack:check": "npm pack --dry-run --ignore-scripts",
-    "test:pi": "node scripts/test-pi.mjs"
+    "test:pi": "node scripts/test-pi.mjs",
+    "test:remote": "node --experimental-strip-types test/remote-sdk.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0"
