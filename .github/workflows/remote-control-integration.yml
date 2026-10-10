@@ -2,36 +2,23 @@ name: Remote control integration
 on:
   push:
     branches: [feat/model-independent-remote-control]
-    paths: [.remote-control-change.b64]
   pull_request:
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - 'scripts/test-pi.mjs'
+      - 'package*.json'
+      - '.github/workflows/remote-control-integration.yml'
 permissions:
   contents: read
 jobs:
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref || github.ref_name }}
-      - name: Apply the reviewed source update to this feature branch
-        if: github.event_name == 'push' && github.ref_name == 'feat/model-independent-remote-control'
-        shell: bash
-        run: |
-          if [ -f .remote-control-change.b64 ]; then
-            python3 - <<'PY'
-          import base64, pathlib, subprocess, zlib
-          sources = sorted(pathlib.Path('.').glob('.remote-control-change.part*')) + [pathlib.Path('.remote-control-change.b64')]
-          patch = zlib.decompress(base64.b64decode(''.join(path.read_text().strip() for path in sources), validate=True))
-          subprocess.run(['git', 'apply', '--index', '--check', '-'], input=patch, check=True)
-          subprocess.run(['git', 'apply', '--index', '-'], input=patch, check=True)
-          PY
-            git rm .remote-control-change.b64 .remote-control-change.part*
-            git -c user.name='LMM integration' -c user.email='noreply@lmm.best' commit -m 'feat: model-independent encrypted Pi remote control and native UI bridge'
-            git push origin HEAD:feat/model-independent-remote-control
-          fi
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
