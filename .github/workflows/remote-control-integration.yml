@@ -1,0 +1,33 @@
+name: Remote control integration
+on:
+  push:
+    branches: [feat/model-independent-remote-control]
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - 'scripts/test-pi.mjs'
+      - 'package*.json'
+      - '.github/workflows/remote-control-integration.yml'
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run pack:check
+      - run: npm run test:pi
+      - name: Install the published ask_user extension without lifecycle scripts
+        run: npm install --no-save --package-lock=false --ignore-scripts pi-ask-user@0.16.0 @sinclair/typebox@0.34.52
+      - name: Actual Pi SDK and third-party ask_user acceptance
+        run: npm run test:remote

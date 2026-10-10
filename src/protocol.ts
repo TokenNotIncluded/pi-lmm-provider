@@ -5,7 +5,7 @@ export const CLIENT_ID = 'lmm-pi';
 export const CALLBACK_PATH = '/oauth/lmm/callback';
 export const APPLICATION_SCOPES = ['catalog:read', 'balance:read', 'usage:read', 'models:invoke'] as const;
 export const MCP_SCOPES = ['mcp:bounties', 'mcp:drawing'] as const;
-export const INITIAL_SCOPES = [...APPLICATION_SCOPES, ...MCP_SCOPES] as const;
+export const INITIAL_SCOPES = [...APPLICATION_SCOPES, ...MCP_SCOPES, 'remote:control'] as const;
 export const SUPPORTED_APIS = ['openai-completions', 'openai-responses', 'anthropic-messages'] as const;
 export type LmmApi = (typeof SUPPORTED_APIS)[number];
 

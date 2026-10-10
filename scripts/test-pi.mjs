@@ -62,10 +62,10 @@ try {
       .filter((command) => command.source === 'extension')
       .map((command) => command.name)
   )
-  for (const required of ['lmm-prices', 'lmm-revoke', 'lmm-diagnostics', 'lmm-cache']) {
+  for (const required of ['lmm-prices', 'lmm-revoke', 'lmm-diagnostics', 'lmm-cache', 'lmm-remote']) {
     if (!names.has(required)) throw new Error(`missing registered command: ${required}`)
   }
-  console.log('Pi native loader registered lmm-prices, lmm-revoke, lmm-diagnostics and lmm-cache')
+  console.log('Pi native loader registered lmm-prices, lmm-revoke, lmm-diagnostics lmm-cache and lmm-remote')
 } finally {
   rmSync(tempRoot, { recursive: true, force: true })
 }
