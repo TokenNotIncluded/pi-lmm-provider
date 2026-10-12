@@ -48,11 +48,14 @@ export function registerRemoteControl(pi: ExtensionAPI, integration: LmmIntegrat
         if (bridge.snapshot().length) throw new Error('Answer or cancel the current question before sending a new task.');
         // Do not expand /commands, skills or templates received over the network.
         // Calling this queues a turn. Never await that turn in the receive loop.
-        pi.sendUserMessage(command.content!, { deliverAs: command.delivery ?? 'followUp', expandPromptTemplates: false });
+        if (command.images?.length && !context.model?.input.includes('image')) throw new Error('The selected Pi model does not support images.');
+        pi.sendUserMessage(command.images?.length
+          ? [...(command.content?.trim() ? [{ type: 'text' as const, text: command.content }] : []), ...command.images]
+          : command.content!, { deliverAs: command.delivery ?? 'followUp', expandPromptTemplates: false });
       } else bridge.respond(command);
       acknowledge(command);
     } catch (error) {
-      const message = error instanceof Error && command.action.startsWith('ui_') ? error.message
+      const message = error instanceof Error && (command.action.startsWith('ui_') || error.message === 'The selected Pi model does not support images.') ? error.message
         : command.action === 'prompt' && bridge.snapshot().length ? 'Answer or cancel the current question first.' : 'Pi could not apply this command. Check the local terminal.';
       acknowledge(command, message);
     }
@@ -81,7 +84,7 @@ export function registerRemoteControl(pi: ExtensionAPI, integration: LmmIntegrat
         return auth?.auth.headers ? bearerFromHeaders(auth.auth.headers) : undefined;
       },
       metadata: () => ({ started_at: startedAt, runtime: 'Pi', directory: ctx.cwd,
-        summary: 'Pi remote session', capabilities: ['prompt', 'abort', 'ui_response', 'ui_input'],
+        summary: 'Pi remote session', capabilities: ['prompt', 'prompt_images', 'abort', 'ui_response', 'ui_input'],
         provider: context?.model?.provider, model: context?.model?.id }),
       onCommand: dispatch,
       onHeartbeat: publishState,
@@ -145,7 +148,9 @@ export function registerRemoteControl(pi: ExtensionAPI, integration: LmmIntegrat
     const role = message.role;
     if (role !== 'assistant' && role !== 'user' && role !== 'toolResult') return;
     const blocks = Array.isArray(message.content) ? message.content : [{ type: 'text', text: message.content }];
-    const content = blocks.flatMap((block) => remoteRecord(block) && block.type === 'text' && typeof block.text === 'string' ? [block.text] : []).join('\n');
+    const content = blocks.flatMap((block) => !remoteRecord(block) ? []
+      : block.type === 'text' && typeof block.text === 'string' ? [block.text]
+      : block.type === 'image' ? ['[Image]'] : []).join('\n');
     if (content) client.publish({ type: role === 'toolResult' ? 'tool_result' : role,
       id, content: boundedText(content), tool_name: message.toolName });
   }

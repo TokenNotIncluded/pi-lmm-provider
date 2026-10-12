@@ -17,6 +17,7 @@ export type RemoteCommand = {
   version: 1; type: 'command'; id: string; issued_at: number;
   action: 'prompt' | 'abort' | 'ui_response' | 'ui_input';
   content?: string; delivery?: 'steer' | 'followUp'; request_id?: string;
+  images?: { type: 'image'; mimeType: 'image/jpeg'; data: string }[];
   value?: string | boolean | number; cancelled?: boolean; key?: RemoteKey; text?: string;
 };
 
@@ -59,6 +60,13 @@ export async function decryptRemote(key: CryptoKey, payload: unknown, aad: strin
     additionalData: new TextEncoder().encode(aad), tagLength: 128 }, key, ciphertext);
   return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(plain));
 }
+export function validRemoteImages(images: unknown): images is NonNullable<RemoteCommand['images']> {
+  if (!Array.isArray(images) || images.length !== 1) return false;
+  const image = images[0];
+  if (!remoteRecord(image) || image.type !== 'image' || image.mimeType !== 'image/jpeg' || typeof image.data !== 'string' || image.data.length > 32 * 1024 || !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data)) return false;
+  const bytes = Buffer.from(image.data, 'base64');
+  return bytes.length >= 4 && bytes.length <= 24 * 1024 && bytes.toString('base64') === image.data && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 && bytes[bytes.length - 2] === 255 && bytes[bytes.length - 1] === 217;
+}
 /** Reject ambiguous commands before dispatch, including stale/replayed UI answers. */
 export function parseRemoteCommand(value: unknown, now = Date.now()): RemoteCommand | undefined {
   if (!remoteRecord(value) || value.version !== 1 || value.type !== 'command' ||
@@ -66,8 +74,10 @@ export function parseRemoteCommand(value: unknown, now = Date.now()): RemoteComm
     typeof value.issued_at !== 'number' || !Number.isSafeInteger(value.issued_at) ||
     Math.abs(now - value.issued_at) > 120_000) return;
   if (value.action === 'abort') return value as RemoteCommand;
-  if (value.action === 'prompt' && typeof value.content === 'string' && value.content.trim() &&
-    Buffer.byteLength(value.content) <= 32_000 && (value.delivery === undefined || value.delivery === 'steer' || value.delivery === 'followUp')) return value as RemoteCommand;
+  if (value.action === 'prompt' && typeof value.content === 'string' && (value.content.trim() || value.images !== undefined) &&
+    Buffer.byteLength(value.content) <= 32_000 && (value.images === undefined || validRemoteImages(value.images)) &&
+    Buffer.byteLength(JSON.stringify(value)) <= REMOTE_MAX_PLAINTEXT &&
+    (value.delivery === undefined || value.delivery === 'steer' || value.delivery === 'followUp')) return value as RemoteCommand;
   if (typeof value.request_id !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(value.request_id)) return;
   if (value.action === 'ui_response' && (value.cancelled === true || typeof value.value === 'boolean' || (typeof value.value === 'number' && Number.isInteger(value.value) && value.value >= 0 && value.value < 1000) ||
     (typeof value.value === 'string' && Buffer.byteLength(value.value) <= 32_000))) return value as RemoteCommand;
