@@ -138,6 +138,8 @@ Package loading, host integration, protocol streaming and token refresh have aut
 
 A successful installation or browser login alone does not prove that model calls and billing work end to end. See [CONTRACT_GAPS.md](CONTRACT_GAPS.md) for the remaining integration constraints.
 
+Wallet status accepts both the legacy v1 balance response and v2's explicit public credits. In v2, `balance` is USD; the status uses the validated `public_credit_balance` instead, never relabeling dollars as credits. Missing or inconsistent amounts remain unavailable; a previously verified balance is marked stale after a failed read. Run `/lmm-prices` to refresh discovery and wallet status without making a paid model request.
+
 ## Development
 
 ```sh
