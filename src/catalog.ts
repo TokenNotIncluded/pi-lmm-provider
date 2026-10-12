@@ -132,20 +132,34 @@ export function admitCatalog(catalog: Catalog, issuer: string, resolve: Capabili
   });
 }
 
-function amount(value: number | null): string { return value === null ? 'unknown' : String(value); }
+function amount(value: number | null): string { return value === null ? 'unknown' : String(Number(value.toPrecision(12))); }
 
 export function priceReport(admissions: readonly Admission[], filter = ''): string {
-  const selected = admissions.filter(({ entry }) => `${entry.id} ${entry.name}`.toLowerCase().includes(filter.toLowerCase()));
-  const lines = selected.slice(0, 40).map(({ entry, reason }) => {
+  const selected = admissions.filter(({ entry }) => `${entry.id} ${entry.name} ${entry.group} ${entry.upstream_model}`.toLowerCase().includes(filter.toLowerCase()));
+  const selectable = selected.filter(({ model }) => model);
+  const readOnly = selected.filter(({ model }) => !model);
+  const ordered = [...selectable, ...readOnly];
+  const lines = [`LMM catalog: ${selectable.length} selectable chat models, ${readOnly.length} read-only entries. Selectable models shown first.`];
+  lines.push(...ordered.slice(0, 40).map(({ entry, model, reason }) => {
     const p = entry.pricing;
+    const expression = p.unit === 'expression' || p.price_basis === 'tiered_expression';
+    const rates = expression
+      ? '  Server expression billing; fixed per-token rates are not provided.'
+      : p.unit === 'request'
+        ? `  request ${amount(p.request)}; token rates are not provided.`
+        : `  input ${amount(p.input)}, output ${amount(p.output)}, cache read ${amount(p.cache_read)}, cache write ${amount(p.cache_write)}, request ${amount(p.request)}`;
+    const selection = model ? `Select using native /model.${entry.native_cost ? '' : ' Pi cost uses vendor reference rates, not an LMM quote.'}`
+      : reason ?? 'Read-only; not registered in /model.';
     return [
       `${entry.group} / ${entry.upstream_model}`,
       `  ${p.currency}/${p.unit}; ${p.price_basis}; group ×${amount(p.group_multiplier)}, trust ×${amount(p.trust_multiplier)} (already included)`,
-      `  input ${amount(p.input)}, output ${amount(p.output)}, cache read ${amount(p.cache_read)}, cache write ${amount(p.cache_write)}, request ${amount(p.request)}`,
-      `  ${reason ?? 'Select using native /model.'} Snapshot ${new Date(p.updated_at * 1000).toISOString()}.`,
+      rates,
+      `  ${selection} Snapshot ${new Date(p.updated_at * 1000).toISOString()}.`,
     ].join('\n');
-  });
-  if (selected.length > 40) lines.push(`Showing 40 of ${selected.length}; pass an ID or name to /lmm-prices to narrow the read-only report.`);
+  }));
+  if (!selected.length) lines.push('No catalog entries match this filter.');
+  if (selected.length > 40) lines.push(`Showing 40 of ${selected.length}; pass an ID or name to /lmm-prices to inspect other entries, including read-only models.`);
+  lines.push('Displayed rates are rounded to 12 significant digits. Wallet display currency does not change server pricing.');
   lines.push('Final billing depends on usage and current server policy; this is not a locked quote or a budget approval. Unknown is not free.');
   return lines.join('\n');
 }

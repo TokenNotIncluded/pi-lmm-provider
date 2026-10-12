@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Api, Credential, Model, ModelsStoreEntry, Provider, RefreshModelsContext } from '@earendil-works/pi-ai';
 import { balanceStatus, parseBalance, type Balance } from './balance.ts';
+import { type CurrencyPreference } from './currency.ts';
 import {
   admitCatalog, nativeModelId, parseCatalog, priceReport,
   type Admission, type CapabilityResolver, type CatalogEntry, type Pricing,
@@ -85,6 +86,7 @@ export interface LmmProviderOptions extends HttpOptions {
   loginTimeoutMs?: number;
   refreshJournalDirectory?: string;
   onStatus?: (status: string | undefined) => void;
+  currencyPreference?: CurrencyPreference;
   /** Registered public OAuth client identity for the embedding native host. */
   clientId?: string;
   /** Short user-facing host name used only in login and callback instructions. */
@@ -99,6 +101,7 @@ export class LmmIntegration {
   private readonly notify: (status: string | undefined) => void;
   private readonly shutdown = new AbortController();
   private current?: Snapshot;
+  private currencyPreference: CurrencyPreference;
   private pendingLogin?: Snapshot;
   private readonly revoked = new Set<string>();
   private balancePending?: { hash: string; task: Promise<void> };
@@ -117,6 +120,7 @@ export class LmmIntegration {
     );
     this.capabilities = options.capabilities ?? resolveKnownCapabilities;
     this.notify = options.onStatus ?? (() => {});
+    this.currencyPreference = { ...(options.currencyPreference ?? { unit: 'credits' }) };
     const relay = createRelay(this.http, {
       lookup: (id, access) => this.lookup(id, access),
       onFinish: (access) => this.refreshBalance(access),
@@ -194,10 +198,16 @@ export class LmmIntegration {
     this.notify(undefined);
   }
 
+  /** Re-render the account-bound in-memory wallet without any network or model call. */
+  setCurrencyPreference(preference: CurrencyPreference): void {
+    this.currencyPreference = { ...preference };
+    this.status();
+  }
+
   private status(): void {
-    if (!this.current) return this.notify(undefined);
+    if (!this.current || this.current.expires <= Date.now()) return this.notify(undefined);
     const admitted = this.current.admissions.filter((item) => item.model).length;
-    this.notify(`${balanceStatus(this.current.balance, this.current.balanceStale)}${this.current.catalogStale ? ' · cached models' : ''}${admitted === 0 ? ' · models gated' : ''}`);
+    this.notify(`${balanceStatus(this.current.balance, this.current.balanceStale, this.currencyPreference)}${this.current.catalogStale ? ' · cached models' : ''}${admitted === 0 ? ' · models gated' : ''}`);
   }
 
   private async fetchSnapshot(value: LmmCredential, signal: AbortSignal): Promise<Snapshot> {
@@ -264,6 +274,8 @@ export class LmmIntegration {
     if (this.current?.session === value.lmm_session && this.current.accessHash === hash && this.current.expires > Date.now()) return;
     if (this.authSnapshotPending?.hash === hash) return this.authSnapshotPending.task;
     const fallback = this.current?.session === value.lmm_session ? this.rebind(this.current, value) : undefined;
+    // Never let a failed new-account discovery leave another account's wallet visible.
+    if (!fallback) this.clear();
     const epoch = ++this.epoch;
     const task = (async () => {
       try {
@@ -305,13 +317,14 @@ export class LmmIntegration {
     }
     const fallback = this.current?.session === value.lmm_session
       ? this.rebind(this.current, value) : this.restore(context.stored, value);
-    if (fallback) {
-      await context.publish({ update: () => {
+    await context.publish({ update: () => {
+      if (!fallback) this.clear();
+      else {
         this.current = fallback;
         this.pendingLogin = undefined;
         this.status();
-      } });
-    }
+      }
+    } });
     const signal = AbortSignal.any([context.signal, this.shutdown.signal]);
     this.epoch++;
     const epoch = this.epoch;

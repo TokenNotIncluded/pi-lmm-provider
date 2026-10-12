@@ -3,6 +3,7 @@ import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { join } from 'node:path';
 import { registerRemoteControl } from './remote-control.ts';
 import { LmmIntegration } from './provider.ts';
+import { CurrencySettings, CURRENCY_USAGE, currencySummary } from './currency.ts';
 import { cacheAdvice } from './cache.ts';
 import { registerToolGuidance, registerToolGuard } from './tool-guidance.ts';
 import { PROVIDER_ID, boundedSignal, safeMessage } from './protocol.ts';
@@ -14,7 +15,9 @@ export default function lmmExtension(pi: ExtensionAPI): void {
   let context: ExtensionContext | undefined;
   let latestStatus: string | undefined;
   let latestDiagnostics: RelayDiagnostics | undefined;
+  const currencySettings = new CurrencySettings(join(getAgentDir(), 'lmm-currency.json'));
   const integration = new LmmIntegration({
+    currencyPreference: currencySettings.get(),
     refreshJournalDirectory: join(getAgentDir(), 'lmm-refresh-journal'),
     onStatus(status) {
       latestStatus = status;
@@ -29,7 +32,10 @@ export default function lmmExtension(pi: ExtensionAPI): void {
   pi.on('session_start', async (_event, ctx) => {
     context = ctx;
     latestDiagnostics = undefined;
-    if (ctx.hasUI) ctx.ui.setStatus(PROVIDER_ID, latestStatus);
+    if (ctx.hasUI) {
+      ctx.ui.setStatus(PROVIDER_ID, latestStatus);
+      if (currencySettings.loadWarning) ctx.ui.notify(currencySettings.loadWarning, 'warning');
+    }
     // Remote-only users must not wait for an unrelated LMM catalog refresh.
     // Login and /lmm-prices still refresh the model provider on demand.
     if (ctx.model && ctx.model.provider !== PROVIDER_ID) return;
@@ -69,6 +75,26 @@ export default function lmmExtension(pi: ExtensionAPI): void {
       const model = ctx.model?.provider === PROVIDER_ID
         ? ctx.modelRegistry.find(PROVIDER_ID, ctx.model.id) ?? ctx.model : undefined;
       pi.sendMessage({ customType: 'lmm-cache', display: true, content: cacheAdvice(model) }, { triggerTurn: false });
+    },
+  });
+
+  pi.registerCommand('lmm-currency', {
+    description: `Set persistent wallet display only: ${CURRENCY_USAGE}; no arguments shows current settings.`,
+    getArgumentCompletions(prefix) {
+      const choices = ['credits', 'usd', 'cny'].filter((unit) => unit.startsWith(prefix.toLowerCase()));
+      return choices.length ? choices.map((unit) => ({ value: unit, label: unit })) : null;
+    },
+    async handler(args, _ctx) {
+      let content: string;
+      try {
+        if (args.trim()) integration.setCurrencyPreference(currencySettings.set(args));
+        content = currencySummary(currencySettings.get());
+        if (!args.trim() && currencySettings.loadWarning) content += ` ${currencySettings.loadWarning}`;
+      } catch {
+        // Do not echo filesystem errors (which can contain unrelated local paths or data).
+        content = `Currency setting was not changed. Usage: ${CURRENCY_USAGE}. CNY requires a positive finite manual rate (at most 1000000), or a previously saved rate. Check that the Pi agent directory is writable.`;
+      }
+      pi.sendMessage({ customType: 'lmm-currency', display: true, content }, { triggerTurn: false });
     },
   });
 

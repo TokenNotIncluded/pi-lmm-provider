@@ -1,9 +1,12 @@
 import { finite, object, requireValue, unixSeconds } from './protocol.ts';
+import { validManualRate, type CurrencyPreference } from './currency.ts';
 
 /** V2 uses explicit public credits; v1 retains its legacy wallet-unit label. */
 export interface Balance {
   currency: 'platform_credit' | 'USD';
   remaining: number | null;
+  /** Present only after the explicit v2 USD contract passes every validation. */
+  usdRemaining?: number;
   quota: number;
   quota_per_unit: number;
   updated_at: number;
@@ -39,6 +42,7 @@ export function parseBalance(value: unknown): Balance {
   }
   return {
     currency: 'platform_credit', remaining, quota, quota_per_unit: quotaPerUnit,
+    ...(row.schema_version === 2 ? { usdRemaining: usdOrLegacy! } : {}),
     updated_at: unixSeconds(row.updated_at), authorization_limit: null,
   };
 }
@@ -54,8 +58,26 @@ function decimal(value: unknown): number {
   return result;
 }
 
-export function balanceStatus(balance: Balance | undefined, stale = false): string {
-  if (!balance || balance.remaining === null) return 'LMM · balance unavailable';
-  const amount = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 }).format(balance.remaining);
-  return `LMM ${amount} platform credits${stale ? ' · stale' : ''} · wallet only`;
+export function balanceStatus(balance: Balance | undefined, stale = false, preference: CurrencyPreference = { unit: 'credits' }): string {
+  const staleLabel = stale ? ' · stale' : '';
+  if (!balance || balance.remaining === null) return `LMM · balance unavailable${staleLabel}`;
+  if (preference.unit === 'credits') {
+    const amount = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 }).format(balance.remaining);
+    return `LMM ${amount} platform credits${staleLabel} · wallet only`;
+  }
+  const usd = balance.usdRemaining;
+  if (usd === undefined || !Number.isFinite(usd)) return `LMM · ${preference.unit.toUpperCase()} balance unavailable (no verified USD basis)${staleLabel} · wallet only`;
+  let amount = usd;
+  let estimate = '';
+  if (preference.unit === 'cny') {
+    if (!validManualRate(preference.usdToCny)) return `LMM · CNY balance unavailable (manual rate required)${staleLabel} · wallet only`;
+    amount *= preference.usdToCny;
+    estimate = ` · estimated, manual rate ${preference.usdToCny} CNY/USD`;
+  }
+  if (!Number.isFinite(amount) || Math.abs(amount) > Number.MAX_SAFE_INTEGER || (usd !== 0 && amount === 0)) {
+    return `LMM · ${preference.unit.toUpperCase()} balance unavailable (conversion out of range)${staleLabel} · wallet only`;
+  }
+  // Significant digits preserve tiny nonzero amounts rather than silently rounding them to zero.
+  const formatted = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 12 }).format(amount);
+  return `LMM ${formatted} ${preference.unit.toUpperCase()}${estimate}${staleLabel} · wallet only`;
 }

@@ -53,6 +53,48 @@ test('admits variable-billing models with a clearly labelled Pi reference cost',
   assert.equal(admission.model.cost.tiers?.[0]?.output, 12);
 });
 
+test('price report distinguishes expression billing and Pi reference costs from server quotes', () => {
+  const variable = { ...model, native_cost: null, pricing: { ...pricing, unit: 'expression', price_basis: 'tiered_expression',
+    input: null, output: null, cache_read: null, cache_write: null } };
+  const admitted = admitCatalog({ ...catalog, models: [variable] }, 'https://lmm.test', () => ({
+    api: 'openai-completions', contextWindow: 1000, maxTokens: 100, reasoning: false, input: ['text'], compat: {},
+    referenceCost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 }, provenance: 'fixture',
+  }));
+  const report = priceReport(admitted);
+  assert.match(report, /1 selectable chat models, 0 read-only entries/);
+  assert.match(report, /Server expression billing; fixed per-token rates are not provided/);
+  assert.match(report, /vendor reference rates, not an LMM quote/);
+  assert.ok(!report.includes('input unknown, output unknown'));
+  assert.match(report, /Unknown is not free/);
+  assert.equal(admitted[0]!.model!.cost.output, 2, 'display formatting does not modify native costs');
+});
+
+test('selectable models precede read-only entries even beyond the original 40-entry window', () => {
+  const [admission] = admitCatalog(catalog, 'https://lmm.test', () => ({
+    api: 'openai-completions', contextWindow: 1000, maxTokens: 100, reasoning: false, input: ['text'], compat: {}, provenance: 'fixture',
+  }));
+  const unavailable = Array.from({ length: 45 }, (_, i) => ({ entry: { ...model, upstream_model: `unavailable-${i}` },
+    reason: 'Capability metadata unavailable; not registered in /model.' }));
+  const report = priceReport([...unavailable, admission!]);
+  assert.match(report, /1 selectable chat models, 45 read-only entries/);
+  assert.ok(report.indexOf('default / gpt-test') < report.indexOf('default / unavailable-0'));
+  assert.match(report, /Showing 40 of 46/);
+  assert.match(priceReport(unavailable, 'unavailable-44'), /0 selectable chat models, 1 read-only entries/);
+  assert.match(priceReport(unavailable, 'absent'), /No catalog entries match/);
+});
+
+test('report rounds binary display artifacts without changing pricing or inventing a request price', () => {
+  const original = { ...model, pricing: { ...pricing, output: 4.050000000000001 } };
+  const report = priceReport([{ entry: original }]);
+  assert.match(report, /output 4.05, cache read/);
+  assert.match(report, /request unknown/);
+  assert.match(report, /Read-only; not registered/);
+  assert.ok(!report.includes('Select using native /model'));
+  assert.equal(original.pricing.output, 4.050000000000001);
+  const request = priceReport([{ entry: { ...model, pricing: { ...pricing, unit: 'request', request: 0.324 } } }]);
+  assert.match(request, /request 0.324; token rates are not provided/);
+});
+
 test('accepts a dynamic estimate as native cost while retaining its estimate basis', () => {
   const result = parseCatalog({ ...catalog, models: [{ ...model, pricing: { ...pricing, price_basis: 'dynamic_estimate' } }] }, catalog.resource, 'group:ZGVmYXVsdA');
   assert.equal(result.models[0]!.pricing.price_basis, 'dynamic_estimate');

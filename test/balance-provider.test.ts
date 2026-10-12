@@ -28,12 +28,20 @@ test('provider publishes v2 credits and preserves only a stale known balance on 
     await integration.provider.refreshModels!({ credential, allowNetwork: true, signal: new AbortController().signal,
       publish: async ({ update }) => { update?.(); return true; } });
     assert.equal(statuses.at(-1), 'LMM 700,000 platform credits · wallet only · models gated');
+    integration.setCurrencyPreference({ unit: 'usd' });
+    assert.equal(statuses.at(-1), 'LMM 1.4 USD · wallet only · models gated');
+    assert.equal(balanceReads, 1, 'display switching is local');
+    integration.setCurrencyPreference({ unit: 'cny', usdToCny: 6.5 });
+    assert.match(statuses.at(-1)!, /LMM 9.1 CNY · estimated, manual rate 6.5 CNY\/USD/);
     body = { ...wallet, public_credit_balance: '1.4' };
     await integration.refreshBalance(credential.access);
+    assert.match(statuses.at(-1)!, /LMM 9.1 CNY.*stale/);
+    integration.setCurrencyPreference({ unit: 'credits' });
     assert.equal(statuses.at(-1), 'LMM 700,000 platform credits · stale · wallet only · models gated');
+    integration.setCurrencyPreference({ unit: 'usd' });
     body = { ...wallet, quota: 0, balance: 0, public_credit_balance: '0' };
     await integration.refreshBalance(credential.access);
-    assert.equal(statuses.at(-1), 'LMM 0 platform credits · wallet only · models gated');
+    assert.equal(statuses.at(-1), 'LMM 0 USD · wallet only · models gated');
     assert.equal(balanceReads, 3);
   } finally { integration.dispose(); }
   assert.equal(statuses.at(-1), undefined);

@@ -64,6 +64,16 @@ For the domestic DeepSeek V4 and reviewed GLM 5.3 entries, the provider also ena
 
 Models using server-side variable billing remain selectable when Pi has an exact official model match. Their names include `LMM variable billing`. Pi shows a public reference estimate, while the LMM wallet settlement is authoritative. Wallet values are platform credit, not spendable US dollars.
 
+## Wallet display currency
+
+`/lmm-currency` shows the current preference. `/lmm-currency credits` (the default) and `/lmm-currency usd` switch the wallet status locally, without a network or paid model request. USD is available only with a strictly validated v2 USD balance; legacy v1's `USD` label is not proof of a dollar conversion and remains unavailable in fiat mode.
+
+For renminbi, use `/lmm-currency cny <USD-to-CNY-rate>` with your own positive finite estimate, for example `/lmm-currency cny 6.5` **only if that is the rate you intend to use**. The status explicitly labels CNY as estimated using a manual rate. No rate is hardcoded, fetched from a third party, or derived from model group/trust multipliers. `/lmm-currency cny` reuses a saved rate; without one it leaves the preference unchanged. Rates above 1,000,000, zero, negative, non-finite and invalid inputs are rejected. Out-of-range converted amounts are unavailable, never fabricated zero.
+
+Preferences persist across sessions and `/reload` in `<agent-dir>/lmm-currency.json` (normally `~/.pi/agent/lmm-currency.json`; respects `PI_CODING_AGENT_DIR`), not in Pi's built-in `/settings`. Example file: `{"version":1,"unit":"cny","usdToCny":6.5}`. Only display preferences are stored, not wallet balances or credentials. Invalid/unreadable configuration falls back to credits with a warning, without overwriting the file. Failed commands or saves preserve the current preference; valid commands update the wallet status immediately and subsequent balance refreshes retain the selection. Known stale balances keep their stale marker; missing amounts/bases/rates stay unavailable. To refresh the wallet without a paid request, use `/lmm-prices`.
+
+This setting covers **wallet status only**. `/lmm-prices` still reports the server's **USD pricing**; Pi's model costs are unchanged. Switching the display does not change the credit ledger, billing, authorization or spending budgets. Fiat wallet values are display projections, not spendable fiat or locked exchange quotes.
+
 ## Thinking display and model diagnostics
 
 For Chat Completions streams, a leading `<thinking>...</thinking>` wrapper in assistant text is recovered into Pi's thinking field as it arrives, including tags split across SSE frames. Existing reasoning fields are preserved. Tags inside ordinary prose or Markdown code fences remain literal. An unclosed leading wrapper is treated as thinking until the response ends; partial closing tags are retained rather than discarded. Only an exact leading wrapper is recognized, so a literal leading wrapper example should be fenced as code.
@@ -138,7 +148,9 @@ Package loading, host integration, protocol streaming and token refresh have aut
 
 A successful installation or browser login alone does not prove that model calls and billing work end to end. See [CONTRACT_GAPS.md](CONTRACT_GAPS.md) for the remaining integration constraints.
 
-Wallet status accepts both the legacy v1 balance response and v2's explicit public credits. In v2, `balance` is USD; the status uses the validated `public_credit_balance` instead, never relabeling dollars as credits. Missing or inconsistent amounts remain unavailable; a previously verified balance is marked stale after a failed read. Run `/lmm-prices` to refresh discovery and wallet status without making a paid model request.
+Wallet status accepts both the legacy v1 balance response and v2's explicit public credits. In v2, `balance` is USD; the default credits status uses the validated `public_credit_balance`, never relabeling dollars as credits. Missing or inconsistent amounts remain unavailable; a previously verified balance is marked stale after a failed read. Run `/lmm-prices` to refresh discovery and wallet status without making a paid model request.
+
+The price report shows selectable chat models before read-only entries, with separate counts; filtering still inspects both. Expression billing explicitly has no fixed token rates, and Pi vendor reference costs are not presented as LMM quotes. Displayed rates use 12 significant digits to remove binary floating-point noise; this does not change model costs or server billing. Audio/image or unknown-capability entries are not made chat-selectable just to populate the picker.
 
 ## Development
 
