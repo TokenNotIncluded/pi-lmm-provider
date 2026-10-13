@@ -26,6 +26,11 @@ export function registerRemoteControl(pi: ExtensionAPI, integration: LmmIntegrat
   let startedAt = Date.now();
   let messageId = remoteId();
   let lastStreamAt = 0;
+  let trailingMessage: unknown;
+  let trailingTimer: ReturnType<typeof setTimeout> | undefined;
+  function clearTrailing() {
+    clearTimeout(trailingTimer); trailingTimer = undefined; trailingMessage = undefined;
+  }
   const bridge = new RemoteUiBridge(() => !!client?.active, publishState);
 
   function publishState() {
@@ -62,6 +67,7 @@ export function registerRemoteControl(pi: ExtensionAPI, integration: LmmIntegrat
   }
   async function stop() {
     generation++;
+    clearTrailing();
     const previous = client;
     client = undefined;
     bridge.dispose();
@@ -74,6 +80,7 @@ export function registerRemoteControl(pi: ExtensionAPI, integration: LmmIntegrat
     context = ctx;
     startedAt = Date.now();
     let ownerSession: string | undefined;
+    let reportedStop = false;
     const remote = new RemoteClient({
       http,
       getAccessToken: async () => {
@@ -92,7 +99,7 @@ export function registerRemoteControl(pi: ExtensionAPI, integration: LmmIntegrat
         if (client !== remote) return;
         ctx.ui.setStatus('lmm-remote', state === 'connected' ? 'Remote: on' : state === 'retrying' ? 'Remote: reconnecting' : undefined);
         if (state === 'stopped') bridge.dispose();
-        if (error && state === 'stopped') notify(error, 'warning');
+        if (error && state === 'stopped') { reportedStop = true; notify(error, 'warning'); }
       },
     });
     client = remote;
@@ -105,7 +112,7 @@ export function registerRemoteControl(pi: ExtensionAPI, integration: LmmIntegrat
     } catch {
       if (client === remote) { client = undefined; bridge.dispose(); }
       await remote.stop();
-      notify('Remote control could not connect. Use /login lmm, approve remote control, then run /lmm-remote on. Local Pi is unchanged.', 'warning');
+      if (!reportedStop) notify('Remote control could not connect. Use /login lmm, approve remote control, then run /lmm-remote on. Local Pi is unchanged.', 'warning');
     }
   }
   async function persist(value: boolean) {
@@ -142,7 +149,7 @@ export function registerRemoteControl(pi: ExtensionAPI, integration: LmmIntegrat
   pi.on('model_select', (_event, ctx) => { context = ctx; publishState(); });
   pi.on('agent_start', (_event, ctx) => { context = ctx; busy = true; publishState(); });
   pi.on('agent_end', (_event, ctx) => { context = ctx; busy = false; publishState(); });
-  pi.on('message_start', () => { messageId = remoteId(); lastStreamAt = 0; });
+  pi.on('message_start', () => { clearTrailing(); messageId = remoteId(); lastStreamAt = 0; });
   function mirror(message: unknown, id: string) {
     if (!client?.active || !remoteRecord(message)) return;
     const role = message.role;
@@ -155,11 +162,20 @@ export function registerRemoteControl(pi: ExtensionAPI, integration: LmmIntegrat
       id, content: boundedText(content), tool_name: message.toolName });
   }
   pi.on('message_update', (event) => {
-    if (Date.now() - lastStreamAt < 3_000) return;
-    lastStreamAt = Date.now();
-    mirror(event.message, messageId);
+    if (!client?.active) return;
+    trailingMessage = event.message;
+    const remaining = 250 - (Date.now() - lastStreamAt);
+    if (remaining <= 0) {
+      clearTrailing(); lastStreamAt = Date.now(); mirror(event.message, messageId);
+    } else if (!trailingTimer) {
+      trailingTimer = setTimeout(() => {
+        const latest = trailingMessage; clearTrailing();
+        lastStreamAt = Date.now(); mirror(latest, messageId);
+      }, remaining);
+      trailingTimer.unref();
+    }
   });
-  pi.on('message_end', (event) => mirror(event.message, messageId));
+  pi.on('message_end', (event) => { clearTrailing(); mirror(event.message, messageId); });
   pi.on('tool_execution_start', (event) => {
     client?.publish({ type: 'tool_call', id: `tool-${event.toolCallId}`, tool_name: event.toolName,
       content: boundedText(event.args) });

@@ -105,6 +105,8 @@ try {
   assert.equal([...fixture.sessions.keys()][0], id);
   console.log('PASS: model change kept the same remote session; remote Stop dismissed the active ask_user tool and stopped Pi');
   assert.equal(fixture.requests.filter((request) => request.path.includes('/models') || request.path.includes('/balance') || request.path.includes('/discovery')).length, 0);
+  assert.equal(fixture.requests.filter((request) => request.method === 'GET' && request.path.endsWith('/messages')).length, 0);
+  assert.equal(fixture.requests.filter((request) => request.path.endsWith('/events')).length, 1, 'one persistent stream through pending tool turns and model changes');
   assert.ok(fixture.requests.every((request) => !request.body.includes(pin) && !request.body.includes('Staging test')));
   assert.deepEqual(errors, []);
   if (browserRoot) {

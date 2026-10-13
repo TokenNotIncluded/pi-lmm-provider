@@ -46,7 +46,7 @@ test('real HTTP transport delivers stop while a question is pending, ignores rep
   const received = [];
   const client = new RemoteClient({ http: new LmmHttp({ issuer: fixture.origin, allowLoopbackHttpForTests: true }),
     getAccessToken: async () => 'lmm_at_fixture', metadata: () => ({ runtime: 'non-lmm model fixture' }),
-    onCommand: (value) => received.push(value), pollMs: 20, heartbeatMs: 80 });
+    onCommand: (value) => received.push(value), heartbeatMs: 80 });
   try {
     await client.start();
     client.publish({ type: 'state', id: 'remote-state', requests: [{ request_id: remoteId(), kind: 'input', question: 'still waiting' }] });

@@ -8,6 +8,56 @@ export function retryAfterMs(value: string | null, now = Date.now()): number | u
   return Number.isFinite(ms) && ms >= 0 ? Math.min(ms, 2_147_483_647) : undefined;
 }
 
+/** Shared bounded error decoding; upstream text must never become a user-facing message. */
+export async function httpResponseError(response: Response, signal: AbortSignal): Promise<LmmError> {
+  let errorCode = '';
+  if (response.headers.get('content-type')?.split(';')[0]?.trim() === 'application/json' && response.body) {
+    const reader = response.body.getReader();
+    const cancel = () => { void reader.cancel().catch(() => {}); };
+    signal.addEventListener('abort', cancel, { once: true });
+    try {
+      const chunks: Uint8Array[] = [];
+      let bytes = 0;
+      while (true) {
+        signal.throwIfAborted();
+        const { value, done } = await reader.read();
+        signal.throwIfAborted();
+        if (done) break;
+        bytes += value.byteLength;
+        requireValue(bytes <= 64_000, 'LMM error response exceeded its size limit.');
+        chunks.push(value);
+      }
+      const body = object(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      if (typeof body.error === 'object' && body.error !== null && !Array.isArray(body.error) && typeof (body.error as Record<string, unknown>).code === 'string') {
+        errorCode = (body.error as Record<string, unknown>).code as string;
+      } else if (typeof body.code === 'string') {
+        errorCode = body.code;
+      }
+    } catch {
+      // Malformed, oversized or timed-out bodies retain safe status-only classification.
+    } finally {
+      signal.removeEventListener('abort', cancel);
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  } else {
+    await response.body?.cancel().catch(() => {});
+  }
+  if (errorCode === 'IP_ACCESS_ROUTE_REJECTED') {
+    return new LmmError('ip_policy', 'LMM request was blocked by the current IP access policy. Change network or ask the administrator to allow this IP.');
+  }
+  if (response.status === 401 || response.status === 403) {
+    return new LmmError('unauthorized', 'LMM authorization is unavailable or was revoked. Use /login; no API-key fallback is allowed.');
+  }
+  if (response.status === 429) {
+    return new LmmError('rate_limited', 'LMM rate limit reached. Wait a moment and retry.', retryAfterMs(response.headers.get('retry-after')));
+  }
+  if (response.status >= 500) {
+    return new LmmError('upstream_unavailable', `LMM service is temporarily unavailable (HTTP ${response.status}). Try again shortly.`);
+  }
+  return new LmmError('http_error', `LMM HTTP request failed (${response.status}).`);
+}
+
 export interface HttpOptions {
   issuer?: string;
   fetch?: typeof globalThis.fetch;
@@ -62,40 +112,7 @@ export class LmmHttp {
         headers: { accept: "application/json", ...init.headers },
       });
       if (!response.ok) {
-        let errorCode = '';
-        if (response.headers.get('content-type')?.split(';')[0]?.trim() === 'application/json' && response.body) {
-          try {
-            const body = object(JSON.parse(await response.text()));
-            if (typeof body.error === 'object' && body.error !== null && !Array.isArray(body.error) && typeof (body.error as Record<string, unknown>).code === 'string') {
-              errorCode = (body.error as Record<string, unknown>).code as string;
-            } else if (typeof body.code === 'string') {
-              errorCode = body.code;
-            }
-          } catch {
-            // Keep protocol errors generic when an upstream body is malformed.
-          }
-        } else {
-          await response.body?.cancel();
-        }
-        if (errorCode === 'IP_ACCESS_ROUTE_REJECTED') {
-          throw new LmmError('ip_policy', 'LMM request was blocked by the current IP access policy. Change network or ask the administrator to allow this IP.');
-        }
-        if (response.status === 401 || response.status === 403) {
-          throw new LmmError(
-            "unauthorized",
-            "LMM authorization is unavailable or was revoked. Use /login; no API-key fallback is allowed.",
-          );
-        }
-        if (response.status === 429) {
-          throw new LmmError("rate_limited", "LMM rate limit reached. Wait a moment and retry.", retryAfterMs(response.headers.get('retry-after')));
-        }
-        if (response.status >= 500) {
-          throw new LmmError("upstream_unavailable", `LMM service is temporarily unavailable (HTTP ${response.status}). Try again shortly.`);
-        }
-        throw new LmmError(
-          "http_error",
-          `LMM HTTP request failed (${response.status}).`,
-        );
+        throw await httpResponseError(response, signal);
       }
       if (response.status === 204 || path === "/api/oauth2/revoke") {
         await response.body?.cancel();

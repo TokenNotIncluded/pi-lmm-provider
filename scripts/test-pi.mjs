@@ -20,7 +20,7 @@ const piBin = process.env.PI_BIN || 'pi'
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd || packageRoot,
-    env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: '1' },
+    env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: '1', PI_TELEMETRY: '0', PI_SKIP_VERSION_CHECK: '1' },
     encoding: 'utf8',
     timeout: 20_000,
     input: options.input,
@@ -66,6 +66,9 @@ try {
     if (!names.has(required)) throw new Error(`missing registered command: ${required}`)
   }
   console.log('Pi native loader registered lmm-prices, lmm-revoke, lmm-diagnostics lmm-cache and lmm-remote')
+  console.log(run(process.execPath, ['--experimental-strip-types', '--test', 'test/remote-images.test.mjs'], { cwd: repo }))
+  console.log(run(process.execPath, ['--experimental-strip-types', 'test/remote-sdk.mjs'], { cwd: repo }))
+  console.log('Pi aggregate passed: native package loader, encrypted images, published ask_user SDK, abort and no model/catalog/balance traffic')
 } finally {
   rmSync(tempRoot, { recursive: true, force: true })
 }
