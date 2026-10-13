@@ -155,7 +155,7 @@ export function registerRemoteControl(pi: ExtensionAPI, integration: LmmIntegrat
       id, content: boundedText(content), tool_name: message.toolName });
   }
   pi.on('message_update', (event) => {
-    if (Date.now() - lastStreamAt < 750) return;
+    if (Date.now() - lastStreamAt < 3_000) return;
     lastStreamAt = Date.now();
     mirror(event.message, messageId);
   });

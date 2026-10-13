@@ -1,5 +1,13 @@
 import { LmmError, boundedSignal, object, requireValue } from "./protocol.ts";
 
+/** Retry-After accepts delay seconds or an HTTP date; ignore malformed hints. */
+export function retryAfterMs(value: string | null, now = Date.now()): number | undefined {
+  if (!value?.trim()) return undefined;
+  const raw = value.trim();
+  const ms = /^\d+$/.test(raw) ? Number(raw) * 1_000 : Date.parse(raw) - now;
+  return Number.isFinite(ms) && ms >= 0 ? Math.min(ms, 2_147_483_647) : undefined;
+}
+
 export interface HttpOptions {
   issuer?: string;
   fetch?: typeof globalThis.fetch;
@@ -79,7 +87,7 @@ export class LmmHttp {
           );
         }
         if (response.status === 429) {
-          throw new LmmError("rate_limited", "LMM rate limit reached. Wait a moment and retry.");
+          throw new LmmError("rate_limited", "LMM rate limit reached. Wait a moment and retry.", retryAfterMs(response.headers.get('retry-after')));
         }
         if (response.status >= 500) {
           throw new LmmError("upstream_unavailable", `LMM service is temporarily unavailable (HTTP ${response.status}). Try again shortly.`);

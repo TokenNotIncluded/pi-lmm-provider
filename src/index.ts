@@ -8,7 +8,7 @@ import { cacheAdvice } from './cache.ts';
 import { registerToolGuidance, registerToolGuard } from './tool-guidance.ts';
 import { PROVIDER_ID, boundedSignal, safeMessage } from './protocol.ts';
 import { bearerFromHeaders } from './stream.ts';
-import { diagnosticsReport, type DiagnosticMessage, type RelayDiagnostics } from './response.ts';
+import { diagnosticsReport, expectedModelDeclaration, type DiagnosticMessage, type RelayDiagnostics } from './response.ts';
 
 /** Native Pi provider entry. No account credentials are read from environment variables. */
 export default function lmmExtension(pi: ExtensionAPI): void {
@@ -55,7 +55,7 @@ export default function lmmExtension(pi: ExtensionAPI): void {
     const diagnostics = (event.message as DiagnosticMessage).lmmDiagnostics;
     if (!diagnostics) return;
     latestDiagnostics = structuredClone(diagnostics);
-    const different = diagnostics.reportedModels.filter((name) => name !== diagnostics.requestedModel);
+    const different = diagnostics.reportedModels.filter((name) => !expectedModelDeclaration(diagnostics.requestedModel, name));
     if (ctx.hasUI && different.length) {
       ctx.ui.notify(`LMM requested ${diagnostics.requestedModel}; gateway reported ${different.join(', ')}. Names differ; aliases or snapshots are possible. Run /lmm-diagnostics for details.`, 'warning');
     }

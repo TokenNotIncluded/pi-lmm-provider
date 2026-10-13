@@ -10,6 +10,17 @@ export interface RelayDiagnostics {
 }
 export type DiagnosticMessage = AssistantMessage & { lmmDiagnostics?: RelayDiagnostics };
 
+/** Only known alias resolutions suppress warnings; pinned snapshots stay strict.
+ * These declarations are not proof of the model actually serving the request. */
+export function expectedModelDeclaration(requested: string, reported: string): boolean {
+  if (requested === reported) return true;
+  const snapshots: Record<string, readonly string[]> = {
+    'gpt-4o': ['gpt-4o-2024-05-13', 'gpt-4o-2024-08-06', 'gpt-4o-2024-11-20'],
+    'gpt-4o-mini': ['gpt-4o-mini-2024-07-18'],
+  };
+  return snapshots[requested]?.includes(reported) ?? false;
+}
+
 /** Recognize only an exact leading wrapper, never tags inside prose or fences. */
 class LeadingThinking {
   private mode: 'prefix' | 'thinking' | 'text' = 'prefix';

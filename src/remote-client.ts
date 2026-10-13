@@ -148,15 +148,17 @@ export class RemoteClient {
     let failures = 0;
     while (!this.shutdown.signal.aborted) {
       try {
-        if (Date.now() - this.heartbeatAt >= (this.options.heartbeatMs ?? 20_000)) await this.heartbeat();
+        if (Date.now() - this.heartbeatAt >= (this.options.heartbeatMs ?? 30_000)) await this.heartbeat();
         await this.poll();
         await this.flush();
         failures = 0;
-        await delay(this.options.pollMs ?? 1_000, undefined, { signal: this.shutdown.signal, ref: false });
+        await delay(this.options.pollMs ?? 3_000, undefined, { signal: this.shutdown.signal, ref: false });
       } catch (error) {
         if (this.shutdown.signal.aborted) break;
         this.connected = false;
-        this.heartbeatAt = 0;
+        // A rate limit does not imply a missing session. Do not add a PUT
+        // heartbeat to every rejected GET/POST retry.
+        if (!(error instanceof LmmError && error.code === 'rate_limited')) this.heartbeatAt = 0;
         if (error instanceof LmmError && error.code === 'unauthorized') {
           this.options.onStatus?.('stopped', 'Remote authorization is unavailable. Use /login lmm and approve remote control again.');
           // Do not await stop() here: it waits for this loop.
@@ -167,7 +169,10 @@ export class RemoteClient {
           break;
         }
         this.options.onStatus?.('retrying', 'Remote connection interrupted; local Pi remains available.');
-        try { await delay(Math.min(30_000, 1_000 * 2 ** Math.min(failures++, 5)), undefined, { signal: this.shutdown.signal, ref: false }); }
+        const backoffMs = Math.min(30_000, 1_000 * 2 ** Math.min(failures++, 5));
+        const waitMs = error instanceof LmmError && error.code === 'rate_limited'
+          ? Math.max(backoffMs, error.retryAfterMs ?? 30_000) : backoffMs;
+        try { await delay(waitMs, undefined, { signal: this.shutdown.signal, ref: false }); }
         catch { break; }
       }
     }

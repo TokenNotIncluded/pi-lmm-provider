@@ -12,10 +12,12 @@ export type LmmApi = (typeof SUPPORTED_APIS)[number];
 /** Messages are deliberately fixed: never include an HTTP body, code, or credential. */
 export class LmmError extends Error {
   readonly code: string;
-  constructor(code: string, message: string) {
+  readonly retryAfterMs?: number;
+  constructor(code: string, message: string, retryAfterMs?: number) {
     super(message);
     this.name = 'LmmError';
     this.code = code;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
