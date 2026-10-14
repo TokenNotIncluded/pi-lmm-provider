@@ -2,11 +2,11 @@
 
 Use [LMM](https://api.lmm.best) models from Pi's native provider and model selector. Authentication runs through browser OAuth with a loopback callback and PKCE, so the extension never asks you to paste an API key into Pi.
 
-This is an alpha release last tested with Pi 0.86.1, 0.87.1, 0.99.2 and 1.0.4. Newer releases are not blocked by a version ceiling. See [Preview status](#preview-status) before relying on it for production work.
+This is an alpha release last tested with Pi 0.86.1, 0.87.1, 0.99.2, 1.0.4 and 1.2.0. Newer releases are not blocked by a version ceiling. See [Preview status](#preview-status) before relying on it for production work.
 
 ## Requirements
 
-- Pi 0.86.1 or newer; the latest official release is tested in CI
+- Pi 0.86.1 or newer; current local maintenance checks use Pi 1.2.0
 - Node.js 22.19.0 or newer
 - An LMM account
 
@@ -79,6 +79,8 @@ This setting covers **wallet status only**. `/lmm-prices` still reports the serv
 For Chat Completions streams, a leading `<thinking>...</thinking>` wrapper in assistant text is recovered into Pi's thinking field as it arrives, including tags split across SSE frames. Existing reasoning fields are preserved. Tags inside ordinary prose or Markdown code fences remain literal. An unclosed leading wrapper is treated as thinking until the response ends; partial closing tags are retained rather than discarded. Only an exact leading wrapper is recognized, so a literal leading wrapper example should be fenced as code.
 
 If an SSE event exceeds the one-million-character inspection limit, any previously held text is flushed and that event plus the rest of the stream passes through without further thinking recovery or model-name inspection. Earlier recovered thinking remains intact. This keeps buffering bounded and avoids guessing the wrapper state after an uninspected event.
+
+JSON and event-stream media types are matched case-insensitively, including headers with charset parameters. This preserves structured IP-policy errors, model diagnostics and thinking recovery for valid mixed-case headers. Unsupported successful JSON-endpoint responses are rejected and their bodies cancelled.
 
 Every LMM response stores `lmmDiagnostics` with the requested model, protocol, sent `reasoning_effort` when present, up to eight gateway-reported model identifiers, and whether thinking recovery occurred. Diagnostics do not copy request headers, prompts, or raw response bodies. Reported names are limited in length and characters, and obvious credential prefixes or authorization expressions are rejected; these checks cannot identify every possible secret mislabeled by a gateway as a model name. `/lmm-diagnostics` shows the latest request captured during the current session. A different gateway name produces an advisory; aliases and dated model snapshots can legitimately differ. Gateway model names are declarations, not proof of the backing model. Missing names are shown as not reported. The existing Pi `responseModel` field is preserved.
 
@@ -161,6 +163,8 @@ npm test
 npm run pack:check
 ```
 
+A clean development install may report `node-domexception@1.0.0` as deprecated. It is pulled in by Pi's Google SDK through `node-fetch`/`fetch-blob`, not by LMM's declared runtime dependencies. The upstream package's latest version is also deprecated. The provider does not suppress that warning or force a transitive major-version override merely to hide it.
+
 The server-side OAuth contract is documented in the [LMM API repository](https://github.com/TokenNotIncluded/api.lmm.best/blob/main/apps/api-go/service/oauth_contract.md).
 
 ## Native Pi file tools
@@ -190,4 +194,4 @@ Incoming commands run independently of outgoing model/tool/UI reports. Publishin
 
 The exact event contract and local safety limits are in [docs/remote-event-stream.md](docs/remote-event-stream.md).
 
-Tests: `npm test`, `npm run typecheck`, `npm run test:pi`. The last is an explicit aggregate: native Pi package loading, encrypted-image SDK tests and the published ask_user integration. Supply an existing `PI_ASK_USER_PATH` pointing to `pi-ask-user@0.16.0` (or make that exact package available locally); the aggregate does not fetch dependencies. `PI_BIN` selects the installed CLI. The checked-in SDK dependency is Pi 1.0.4; a Pi 1.1 CLI smoke test is not a claim that a 1.1 SDK was tested. These checks use Pi's deterministic non-LMM test provider, a local encrypted SSE relay and fixture credentials; no production account or paid model request is used. `npm run test:remote` remains the individual ask_user check.
+Tests: `npm test`, `npm run typecheck`, `npm run test:pi`. The last is an explicit aggregate: native Pi package loading (including `/lmm-currency`), encrypted-image SDK tests and the published ask_user integration. `npm ci --ignore-scripts` installs the pinned `pi-ask-user@0.16.0` development dependency; `PI_ASK_USER_PATH` can point to an existing copy of that exact version instead. The aggregate itself does not fetch dependencies. `PI_BIN` selects the installed CLI. The checked-in Pi SDK dependencies and the locally verified CLI are 1.2.0. These checks use Pi's deterministic non-LMM test provider, a local encrypted SSE relay and fixture credentials; no production account or paid model request is used. `npm run test:remote` remains the individual ask_user check. Live Pro-group model requests require separate acceptance with a valid OAuth login; an expired credential protected by the refresh journal requires `/login`, not deleting the journal to replay it.

@@ -45,10 +45,11 @@
     "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.0.4",
-    "@earendil-works/pi-coding-agent": "1.0.4",
+    "@earendil-works/pi-ai": "1.2.0",
+    "@earendil-works/pi-coding-agent": "1.2.0",
     "@types/node": "26.1.1",
-    "@typescript/native-preview": "7.0.0-dev.20260707.2"
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "pi-ask-user": "0.16.0"
   },
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.ts test/*.test.mjs",

@@ -80,7 +80,7 @@ function reportedModel(value: unknown): value is string {
 
 /** Pass SSE through while repairing leading thinking wrappers before Pi parses it. */
 export function inspectResponse(response: Response, diagnostics: RelayDiagnostics): Response {
-  if (!response.body || response.headers.get('content-type')?.split(';')[0]?.trim() !== 'text/event-stream') return response;
+  if (!response.body || response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== 'text/event-stream') return response;
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let pending = '';

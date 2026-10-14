@@ -84,6 +84,25 @@ test('records declared names for all supported protocols without changing native
   }
 });
 
+test('mixed-case SSE media types retain model diagnostics and thinking recovery', async () => {
+  for (const api of ['openai-completions', 'openai-responses', 'anthropic-messages'] as const) {
+    for (const contentType of ['Text/Event-Stream; charset=utf-8', 'TEXT/EVENT-STREAM ; charset=UTF-8']) {
+      const value = { ...diagnostics(), api };
+      const upstream = response(frame(chunk('<thinking>reason</thinking>answer')) + 'data: [DONE]\n\n');
+      upstream.headers.set('content-type', contentType);
+      const inspected = inspectResponse(upstream, value);
+      assert.notEqual(inspected, upstream, 'SSE media types are case-insensitive');
+      const text = await inspected.text();
+      assert.deepEqual(value.reportedModels, ['gpt-6.1-sol']);
+      assert.equal(value.recoveredThinking, api === 'openai-completions');
+      if (api === 'openai-completions') {
+        assert.match(text, /"reasoning_content":"reason"/);
+        assert.match(text, /"content":"answer"/);
+      }
+    }
+  }
+});
+
 test('missing names and bounded identifiers are explicit in diagnostics', async () => {
   const value = diagnostics();
   await decode(Array.from({ length: 12 }, (_, index) => frame({ model: `model-${index}` })).join('') + frame({ model: 'invalid\nname' }), value);

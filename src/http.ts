@@ -11,7 +11,7 @@ export function retryAfterMs(value: string | null, now = Date.now()): number | u
 /** Shared bounded error decoding; upstream text must never become a user-facing message. */
 export async function httpResponseError(response: Response, signal: AbortSignal): Promise<LmmError> {
   let errorCode = '';
-  if (response.headers.get('content-type')?.split(';')[0]?.trim() === 'application/json' && response.body) {
+  if (response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() === 'application/json' && response.body) {
     const reader = response.body.getReader();
     const cancel = () => { void reader.cancel().catch(() => {}); };
     signal.addEventListener('abort', cancel, { once: true });
@@ -118,10 +118,9 @@ export class LmmHttp {
         await response.body?.cancel();
         return {};
       }
-      requireValue(
-        response.headers.get("content-type")?.split(";")[0]?.trim() ===
-          "application/json",
-      );
+      const isJson = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() === "application/json";
+      if (!isJson) await response.body?.cancel().catch(() => {});
+      requireValue(isJson);
       requireValue(response.body);
       const reader = response.body.getReader();
       const chunks: Uint8Array[] = [];

@@ -62,10 +62,11 @@ try {
       .filter((command) => command.source === 'extension')
       .map((command) => command.name)
   )
-  for (const required of ['lmm-prices', 'lmm-revoke', 'lmm-diagnostics', 'lmm-cache', 'lmm-remote']) {
+  const requiredCommands = ['lmm-prices', 'lmm-revoke', 'lmm-diagnostics', 'lmm-cache', 'lmm-currency', 'lmm-remote']
+  for (const required of requiredCommands) {
     if (!names.has(required)) throw new Error(`missing registered command: ${required}`)
   }
-  console.log('Pi native loader registered lmm-prices, lmm-revoke, lmm-diagnostics lmm-cache and lmm-remote')
+  console.log(`Pi native loader registered ${requiredCommands.join(', ')}`)
   console.log(run(process.execPath, ['--experimental-strip-types', '--test', 'test/remote-images.test.mjs'], { cwd: repo }))
   console.log(run(process.execPath, ['--experimental-strip-types', 'test/remote-sdk.mjs'], { cwd: repo }))
   console.log('Pi aggregate passed: native package loader, encrypted images, published ask_user SDK, abort and no model/catalog/balance traffic')
