@@ -1,0 +1,107 @@
+name: Publish accepted npm release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing release version, without the v prefix
+        required: true
+        default: 0.1.0-alpha.5
+        type: string
+      expected_sha256:
+        description: Independently accepted SHA-256 of the release tgz
+        required: true
+        default: 5ff8664d2fc42f12ea148ef0f21f039c639fdb4f2cd2a6bc3f344a8546ae895d
+        type: string
+      dist_tag:
+        description: Explicit npm distribution tag; prereleases cannot use latest
+        required: true
+        default: alpha
+        type: choice
+        options: [alpha, beta, next, latest]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'TokenNotIncluded/pi-lmm-provider' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+      DIST_TAG: ${{ inputs.dist_tag }}
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+      NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Validate dispatch inputs
+        id: inputs
+        run: |
+          python3 -B .github/scripts/npm-release.py inputs >> "$GITHUB_OUTPUT"
+          printf 'RELEASE_DIR=%s/pi-npm-release\nNPM_CONFIG_USERCONFIG=%s/pi-publish.npmrc\n' \
+            "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: 26.11.1
+          package-manager-cache: false
+      - name: Install the pinned OIDC-capable npm CLI
+        run: |
+          npm install --global --ignore-scripts --no-audit --no-fund npm@12.2.0
+          test "$(npm --version)" = 12.2.0
+      - name: Download the existing release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.inputs.outputs.archive }}
+          RELEASE_TAG: ${{ steps.inputs.outputs.release_tag }}
+        run: |
+          mkdir -p "$RELEASE_DIR"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,isPrerelease,assets,url > "$RELEASE_DIR/release.json"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$ARCHIVE" --pattern pi-SHA256SUMS --dir "$RELEASE_DIR"
+      - name: Check out the released source without running it
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: refs/tags/${{ steps.inputs.outputs.release_tag }}
+          path: release-source
+          persist-credentials: false
+      - name: Enumerate the tagged package files without lifecycle scripts
+        working-directory: release-source
+        run: npm pack --dry-run --ignore-scripts --json > "$RELEASE_DIR/pack-list.json"
+      - name: Verify the accepted bytes and every packaged source file
+        run: python3 -B .github/scripts/npm-release.py artifact --source release-source --directory "$RELEASE_DIR"
+      - name: Inspect the exact registry version before publishing
+        id: registry
+        env:
+          ARCHIVE: ${{ steps.inputs.outputs.archive }}
+        run: |
+          python3 -B .github/scripts/npm-release.py registry --phase before \
+            --archive "$RELEASE_DIR/$ARCHIVE" --state "$RELEASE_DIR/registry-before.json" >> "$GITHUB_OUTPUT"
+      - name: Publish the verified tarball using npm Trusted Publishing
+        if: steps.registry.outputs.publish_required == 'true'
+        env:
+          ARCHIVE: ${{ steps.inputs.outputs.archive }}
+        run: |
+          npm publish "$RELEASE_DIR/$ARCHIVE" --tag "$DIST_TAG" --access public \
+            --ignore-scripts --provenance --registry=https://registry.npmjs.org
+      - name: Read back package integrity, distribution tags and provenance
+        env:
+          ARCHIVE: ${{ steps.inputs.outputs.archive }}
+        run: |
+          python3 -B .github/scripts/npm-release.py registry --phase after \
+            --archive "$RELEASE_DIR/$ARCHIVE" --state "$RELEASE_DIR/registry-before.json"

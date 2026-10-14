@@ -171,6 +171,29 @@ To refresh the public metadata snapshot, run `npm run metadata:update` and revie
 
 A clean development install may report `node-domexception@1.0.0` as deprecated. It is pulled in by Pi's Google SDK through `node-fetch`/`fetch-blob`, not by LMM's declared runtime dependencies. The upstream package's latest version is also deprecated. The provider does not suppress that warning or force a transitive major-version override merely to hide it.
 
+## Publish an accepted npm release
+
+The [Publish accepted npm release](.github/workflows/publish.yml) workflow publishes the existing GitHub release tarball through [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/). It runs manually from `main` on a GitHub-hosted runner with Node 26.11.1 and npm 12.2.0. No npm token or personal access token is stored in GitHub. The fixed `npm` environment should allow deployments from `main` only.
+
+Configure the package's npm Trusted Publisher as follows; these values are case-sensitive:
+
+| Field | Value |
+| --- | --- |
+| Provider | GitHub Actions |
+| Organization or user | `TokenNotIncluded` |
+| Repository | `pi-lmm-provider` |
+| Workflow filename | `publish.yml` |
+| Environment name | `npm` |
+| Allowed actions | Allow direct `npm publish`; dist-tag management is not needed |
+
+New npm trust configurations default to staged publishing, so direct publishing must be explicitly enabled. Complete the first successful publish within two days of configuring trust. The job needs `contents: read` to download the release and `id-token: write` to obtain its short-lived npm authorization; it does not need repository write permission.
+
+After local and independent acceptance, create the version's GitHub release with `tokennotincluded-pi-lmm-provider-VERSION.tgz` and a `pi-SHA256SUMS` file containing exactly `SHA256  FILENAME`. Run the workflow with `version` (without `v`), `expected_sha256` from acceptance, and an explicit `dist_tag`. The defaults publish `0.1.0-alpha.5` to `alpha` using SHA-256 `5ff8664d2fc42f12ea148ef0f21f039c639fdb4f2cd2a6bc3f344a8546ae895d`. Prereleases cannot use `latest`.
+
+The workflow checks the release asset identity, hash, package name/version/repository, and every packaged byte against the version tag's source. It enumerates the tagged package without lifecycle scripts, then publishes the accepted tarball without rebuilding it. A repeat run reads the exact registry version and archive integrity first: identical bytes with the requested tag already set skip publication; different bytes or a different tag stop for inspection. It never repairs distribution tags automatically. Read-back checks registry integrity, tags and provenance metadata, including that a non-`latest` publication preserved `latest`. The provenance URL is included in the result for separate attestation inspection and signature verification.
+
+Provenance records this publishing workflow and its commit. The tag/source comparison binds the previously accepted artifact to its released source; it does not claim the original local build ran in CI. Live OAuth, paid model access and billing acceptance remain separate from package publication.
+
 The server-side OAuth contract is documented in the [LMM API repository](https://github.com/TokenNotIncluded/api.lmm.best/blob/main/apps/api-go/service/oauth_contract.md).
 
 ## Native Pi file tools
