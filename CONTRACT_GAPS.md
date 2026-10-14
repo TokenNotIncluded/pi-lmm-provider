@@ -2,9 +2,11 @@
 
 ## Catalog capabilities
 
-Pi 0.85.1 model capability metadata is resolved from its complete installed official provider model directory by exact upstream model ID and the API advertised by the LMM catalog. Reviewed direct-vendor entries take precedence; the remaining official entries are accepted only when every exact-ID match agrees. No cross-model fallback is permitted. Unknown IDs remain unknown and are not admitted to `/model`; the resolver does not infer capabilities from names.
+Model capability metadata is resolved from Pi's complete installed official provider model directory by exact upstream model ID and the API advertised by the LMM catalog. Reviewed direct-vendor entries take precedence; the remaining official entries are accepted only when every exact-ID match agrees. A bundled models.dev snapshot corrects exact vendor capacities and narrows supported inputs/reasoning; it cannot add an unverified Pi transport or reasoning control. Separate input limits conservatively cap Pi's single context limit. Explicit non-chat, mixed-media output, tool-less and incomplete profiles are excluded across alternate-provider fallbacks. No cross-model fallback is permitted. Unknown IDs remain unknown and are not admitted to `/model`; the resolver does not infer capabilities from names.
 
 The last verified admitted models are cached for up to 24 hours using Pi's provider model store. The cache contains no bearer or refresh token, is bound to a hash of the issuer and OAuth session, is filtered against the current scopes, and is marked stale in status output. Live relay authorization remains server-side; a cached entry cannot bypass a removed group, model, or grant.
+
+When the host exposes effective settings, a saved LMM default triggers startup discovery even if an empty/expired cache caused Pi to select another provider. Discovery preserves the current selection. Pi's public extension context does not identify an initial explicit CLI/SDK model override, so a non-LMM override with an LMM saved default can still trigger read-only discovery. A non-LMM saved default with a non-LMM current model does not. Older hosts without the settings API require `/lmm-prices` to recover that catalog.
 
 ## Non-static pricing
 

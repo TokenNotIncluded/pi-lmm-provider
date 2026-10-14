@@ -56,9 +56,13 @@ Current alpha releases request the LMM application scopes `catalog:read balance:
 
 Selectable models come from the account-specific LMM catalog and exact capability matches in Pi's built-in model directory. The last verified model list is cached for up to 24 hours and bound to the OAuth login session. The relay still validates every request against the live server-side account, group, and model policy.
 
+The package also includes an offline [models.dev](https://github.com/anomalyco/models.dev) snapshot, with its fetch time, source SHA-256 and MIT license. It corrects context/output ceilings for exact vendor/model IDs already supported by Pi. When a vendor declares a separate maximum input, Pi's single context limit is capped at that input ceiling; this can leave some total capacity unused. Text/image and reasoning support use the intersection of the snapshot and Pi's reviewed transport profile. The snapshot cannot invent reasoning controls or grant new models, groups or protocols. Explicit non-chat, non-text-output, tool-less and incomplete records remain read-only, including when Azure or Vertex lists the same ID. Missing IDs retain the existing exact Pi catalog behavior; similar names are never substituted. Snapshot data is loaded locally, with no background metadata request or account data sent to models.dev.
+
 For models advertised by LMM as `openai-completions`, the plugin still uses the exact Pi catalog entry for the upstream model. This is important for models whose native Pi adapter is different, such as Astra (Responses), Claude (Anthropic), or Gemini (Google): their `reasoning`, supported thinking levels, context window, and output limit are preserved while LMM translates the OpenAI-compatible request upstream. Non-thinking models remain non-thinking. The model's map may intentionally remove levels that the upstream does not support, so Pi can clamp the global default to the nearest valid level.
 
 After upgrading from an older alpha, restart Pi and run `/model` or `/lmm-prices` once. The provider rebuilds the session-bound cache from the current Pi catalog; it does not trust stale `reasoning:false` metadata from an older plugin.
+
+On hosts exposing effective settings, a saved LMM default also refreshes discovery after Pi falls back to another provider because LMM's cache is empty or expired. The current selection stays as chosen; use `/model` to select the refreshed LMM entry. A non-LMM selection with a non-LMM saved default skips this startup refresh. Hosts do not expose whether an initial non-LMM selection came from a fallback or an explicit CLI/SDK override, so a saved LMM default can still trigger discovery in that case. Older hosts can recover discovery with `/lmm-prices`.
 
 For the domestic DeepSeek V4 and reviewed GLM 5.3 entries, the provider also enables long prompt-cache retention and session-affinity headers. These request cache-friendly behavior from the gateway; they do not guarantee a particular worker, retention duration, cache hit, or lower charge. See [Cache compatibility](#cache-compatibility) for overrides and the `pi-cache-optimizer` advisory.
 
@@ -162,6 +166,8 @@ npm run typecheck
 npm test
 npm run pack:check
 ```
+
+To refresh the public metadata snapshot, run `npm run metadata:update` and review the changed IDs, capacities and exclusions before release. The helper validates all selected provider sections before atomically replacing the file; malformed or incomplete downloads leave the existing snapshot intact. `curl -fsS https://models.dev/api.json | npm run metadata:update -- --stdin` supports environments where Node's HTTPS connection is unavailable. `--output PATH` writes an isolated preview instead of replacing the bundled snapshot. Metadata refresh never imports prices, transport configuration or credentials. Account rates still come from LMM; Pi reference estimates remain clearly labelled in `/lmm-prices`, and unknown pricing is not free.
 
 A clean development install may report `node-domexception@1.0.0` as deprecated. It is pulled in by Pi's Google SDK through `node-fetch`/`fetch-blob`, not by LMM's declared runtime dependencies. The upstream package's latest version is also deprecated. The provider does not suppress that warning or force a transitive major-version override merely to hide it.
 

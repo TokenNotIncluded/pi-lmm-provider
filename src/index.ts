@@ -36,9 +36,11 @@ export default function lmmExtension(pi: ExtensionAPI): void {
       ctx.ui.setStatus(PROVIDER_ID, latestStatus);
       if (currencySettings.loadWarning) ctx.ui.notify(currencySettings.loadWarning, 'warning');
     }
-    // Remote-only users must not wait for an unrelated LMM catalog refresh.
-    // Login and /lmm-prices still refresh the model provider on demand.
-    if (ctx.model && ctx.model.provider !== PROVIDER_ID) return;
+    // Pi may have fallen back to another provider because the saved LMM model
+    // was absent from an empty/expired cache. Recover discovery without replacing
+    // the selected model. Older hosts can still refresh with /lmm-prices.
+    const savedProvider = (pi as { getSettings?: () => { defaultProvider?: string } }).getSettings?.().defaultProvider;
+    if (ctx.model && ctx.model.provider !== PROVIDER_ID && savedProvider !== PROVIDER_ID) return;
     const result = await ctx.modelRegistry.refresh({
       providers: [PROVIDER_ID], allowNetwork: true, signal: boundedSignal(ctx.signal),
     });

@@ -1,6 +1,6 @@
 {
   "name": "@tokennotincluded/pi-lmm-provider",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "LMM OAuth provider for Pi's native model selector (integration-gated preview)",
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -34,6 +34,8 @@
   },
   "files": [
     "src/*.ts",
+    "src/models-dev.json",
+    "src/models-dev.LICENSE",
     "scripts/install.mjs",
     "README.md",
     "CONTRACT_GAPS.md",
@@ -54,6 +56,7 @@
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.ts test/*.test.mjs",
     "typecheck": "tsgo --noEmit",
+    "metadata:update": "node --experimental-strip-types scripts/update-model-metadata.mjs",
     "pack:check": "npm pack --dry-run --ignore-scripts",
     "test:pi": "node scripts/test-pi.mjs",
     "test:remote": "node --experimental-strip-types test/remote-sdk.mjs"

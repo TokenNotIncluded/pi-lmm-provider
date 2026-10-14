@@ -1,0 +1,1124 @@
+{
+  "source": "https://models.dev/api.json",
+  "fetchedAt": "2026-10-14T15:29:46.723Z",
+  "sourceSha256": "f1309c07b87dca0380c04a25be131536dbbbd5cbfa072acbd07e1c0f67fc7477",
+  "license": "MIT; see models-dev.LICENSE",
+  "providers": {
+    "openai": {
+      "gpt-4": {
+        "contextWindow": 8192,
+        "maxTokens": 8192,
+        "reasoning": false,
+        "input": [
+          "text"
+        ]
+      },
+      "gpt-4-turbo": {
+        "contextWindow": 128000,
+        "maxTokens": 4096,
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-4.1": {
+        "contextWindow": 1047576,
+        "maxTokens": 32768,
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-4.1-mini": {
+        "contextWindow": 1047576,
+        "maxTokens": 32768,
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-4.1-nano": {
+        "contextWindow": 1047576,
+        "maxTokens": 32768,
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-4o": {
+        "contextWindow": 128000,
+        "maxTokens": 16384,
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-4o-2024-05-13": {
+        "contextWindow": 128000,
+        "maxTokens": 4096,
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-4o-2024-08-06": {
+        "contextWindow": 128000,
+        "maxTokens": 16384,
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-4o-2024-11-20": {
+        "contextWindow": 128000,
+        "maxTokens": 16384,
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-4o-mini": {
+        "contextWindow": 128000,
+        "maxTokens": 16384,
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5": {
+        "contextWindow": 272000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5-mini": {
+        "contextWindow": 272000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5-nano": {
+        "contextWindow": 272000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5-pro": {
+        "contextWindow": 272000,
+        "maxTokens": 272000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.1": {
+        "contextWindow": 272000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.2": {
+        "contextWindow": 272000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.2-chat-latest": {
+        "contextWindow": 128000,
+        "maxTokens": 16384,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.2-pro": {
+        "contextWindow": 272000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.3-chat-latest": {
+        "contextWindow": 128000,
+        "maxTokens": 16384,
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.3-codex": {
+        "contextWindow": 272000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.3-codex-spark": {
+        "contextWindow": 100000,
+        "maxTokens": 32000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.4": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.4-mini": {
+        "contextWindow": 272000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.4-nano": {
+        "contextWindow": 272000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.4-pro": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.5": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.5-pro": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.6": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.6-luna": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.6-sol": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-5.6-terra": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-6-astra": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-6-luna": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-6-sol": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-6.1-sol": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-daybreak-blue-latest": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-daybreak-red-latest": {
+        "contextWindow": 272000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "o1": {
+        "contextWindow": 200000,
+        "maxTokens": 100000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "o1-pro": {
+        "contextWindow": 200000,
+        "maxTokens": 100000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "o3": {
+        "contextWindow": 200000,
+        "maxTokens": 100000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "o3-mini": {
+        "contextWindow": 200000,
+        "maxTokens": 100000,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "o3-pro": {
+        "contextWindow": 200000,
+        "maxTokens": 100000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "o4-mini": {
+        "contextWindow": 200000,
+        "maxTokens": 100000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      }
+    },
+    "anthropic": {
+      "claude-fable-5": {
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-fable-5-1": {
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-haiku-4-5": {
+        "contextWindow": 200000,
+        "maxTokens": 64000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-haiku-4-5-20251001": {
+        "contextWindow": 200000,
+        "maxTokens": 64000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-haiku-5-5": {
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-opus-4-5": {
+        "contextWindow": 200000,
+        "maxTokens": 64000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-opus-4-5-20251101": {
+        "contextWindow": 200000,
+        "maxTokens": 64000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-opus-4-6": {
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-opus-4-7": {
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-opus-4-8": {
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-opus-5": {
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-opus-5-5": {
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-sonnet-4-5": {
+        "contextWindow": 200000,
+        "maxTokens": 64000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-sonnet-4-5-20250929": {
+        "contextWindow": 200000,
+        "maxTokens": 64000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-sonnet-4-6": {
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-sonnet-5": {
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "claude-sonnet-5-5": {
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      }
+    },
+    "deepseek": {
+      "deepseek-flash": {
+        "contextWindow": 1000000,
+        "maxTokens": 393216,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "deepseek-v4-flash": {
+        "contextWindow": 1000000,
+        "maxTokens": 393216,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "deepseek-v4-flash-vision-exp": {
+        "contextWindow": 1000000,
+        "maxTokens": 393216,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "deepseek-v4-pro": {
+        "contextWindow": 1000000,
+        "maxTokens": 393216,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      }
+    },
+    "xai": {
+      "grok-4.20-0309-non-reasoning": {
+        "contextWindow": 1000000,
+        "maxTokens": 30000,
+        "reasoning": false,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "grok-4.20-0309-reasoning": {
+        "contextWindow": 1000000,
+        "maxTokens": 30000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "grok-4.3": {
+        "contextWindow": 1000000,
+        "maxTokens": 30000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "grok-4.5": {
+        "contextWindow": 500000,
+        "maxTokens": 500000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "grok-4.6": {
+        "contextWindow": 500000,
+        "maxTokens": 500000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "grok-4.7": {
+        "contextWindow": 500000,
+        "maxTokens": 500000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "grok-build-0.1": {
+        "contextWindow": 256000,
+        "maxTokens": 256000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      }
+    },
+    "moonshotai": {
+      "kimi-k2.6": {
+        "contextWindow": 262144,
+        "maxTokens": 262144,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "kimi-k2.7-code": {
+        "contextWindow": 262144,
+        "maxTokens": 262144,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "kimi-k2.7-code-highspeed": {
+        "contextWindow": 262144,
+        "maxTokens": 262144,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "kimi-k3": {
+        "contextWindow": 1048576,
+        "maxTokens": 1048576,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      }
+    },
+    "minimax": {
+      "MiniMax-M2": {
+        "contextWindow": 204800,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "MiniMax-M2.1": {
+        "contextWindow": 204800,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "MiniMax-M2.5": {
+        "contextWindow": 204800,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "MiniMax-M2.5-highspeed": {
+        "contextWindow": 204800,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "MiniMax-M2.7": {
+        "contextWindow": 204800,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "MiniMax-M2.7-highspeed": {
+        "contextWindow": 204800,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "MiniMax-M3": {
+        "contextWindow": 1000000,
+        "maxTokens": 512000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      }
+    },
+    "google": {
+      "gemini-2.5-computer-use-preview-10-2025": {
+        "contextWindow": 128000,
+        "maxTokens": 64000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-2.5-flash": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-2.5-flash-lite": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-2.5-pro": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-3-flash-preview": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-3.1-flash-lite": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-3.1-flash-lite-preview": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-3.1-pro-preview": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-3.1-pro-preview-customtools": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-3.5-flash": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-3.5-flash-lite": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-3.6-flash": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-3.7-flash": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-3.8-flash": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-4-argon": {
+        "contextWindow": 1048576,
+        "maxTokens": 32768,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-flash-latest": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-flash-lite-latest": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemma-4-26b-a4b-it": {
+        "contextWindow": 262144,
+        "maxTokens": 32768,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemma-4-31b-it": {
+        "contextWindow": 262144,
+        "maxTokens": 32768,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      }
+    },
+    "zai": {
+      "glm-4.5": {
+        "contextWindow": 131072,
+        "maxTokens": 98304,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-4.5-air": {
+        "contextWindow": 131072,
+        "maxTokens": 98304,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-4.5-flash": {
+        "contextWindow": 131072,
+        "maxTokens": 98304,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-4.5v": {
+        "contextWindow": 64000,
+        "maxTokens": 16384,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "glm-4.6": {
+        "contextWindow": 204800,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-4.6v": {
+        "contextWindow": 128000,
+        "maxTokens": 32768,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "glm-4.6v-flash": {
+        "contextWindow": 128000,
+        "maxTokens": 32768,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "glm-4.7": {
+        "contextWindow": 204800,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-4.7-flash": {
+        "contextWindow": 200000,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-4.7-flashx": {
+        "contextWindow": 200000,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-5": {
+        "contextWindow": 204800,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-5-turbo": {
+        "contextWindow": 200000,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-5.1": {
+        "contextWindow": 200000,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-5.2": {
+        "contextWindow": 1000000,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-5.3": {
+        "contextWindow": 1000000,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text"
+        ]
+      },
+      "glm-5.3-flash": {
+        "contextWindow": 1000000,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "glm-5.3-flashx": {
+        "contextWindow": 1000000,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "glm-5v-turbo": {
+        "contextWindow": 200000,
+        "maxTokens": 131072,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      }
+    }
+  },
+  "excluded": {
+    "openai": [
+      "chatgpt-image-latest",
+      "gpt-3.5-turbo",
+      "gpt-image-1",
+      "gpt-image-1-mini",
+      "gpt-image-1.5",
+      "gpt-image-2",
+      "gpt-realtime-2.1",
+      "text-embedding-3-large",
+      "text-embedding-3-small",
+      "text-embedding-ada-002"
+    ],
+    "anthropic": [],
+    "deepseek": [],
+    "xai": [
+      "grok-4.20-multi-agent-0309",
+      "grok-imagine-image",
+      "grok-imagine-image-quality",
+      "grok-imagine-video",
+      "grok-imagine-video-1.5",
+      "grok-imagine-video-1.5-lite"
+    ],
+    "moonshotai": [],
+    "minimax": [],
+    "google": [
+      "deep-research-max-preview-04-2026",
+      "deep-research-preview-04-2026",
+      "gemini-2.5-flash-image",
+      "gemini-2.5-flash-preview-tts",
+      "gemini-2.5-pro-preview-tts",
+      "gemini-3-pro-image",
+      "gemini-3-pro-image-preview",
+      "gemini-3.1-flash-image",
+      "gemini-3.1-flash-image-preview",
+      "gemini-3.1-flash-lite-image",
+      "gemini-3.1-flash-live-preview",
+      "gemini-3.1-flash-tts-preview",
+      "gemini-3.5-live-translate-preview",
+      "gemini-embedding-001",
+      "gemini-embedding-2",
+      "gemini-omni-flash-preview",
+      "lyria-3-clip-preview",
+      "lyria-3-pro-preview",
+      "veo-3.1-fast-generate-preview",
+      "veo-3.1-generate-preview",
+      "veo-3.1-lite-generate-preview"
+    ],
+    "zai": []
+  }
+}

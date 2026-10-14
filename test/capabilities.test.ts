@@ -12,12 +12,29 @@ test('exact known model and advertised protocol supply capabilities and a refere
   assert.ok(result);
   assert.equal(result.api, 'openai-responses');
   assert.ok(result.contextWindow > 0 && result.maxTokens > 0);
-  assert.match(result.provenance, /openai\/gpt-4o$/);
+  assert.match(result.provenance, /openai\/gpt-4o; models.dev \(.+\) capacities$/);
   assert.ok(result.referenceCost && result.referenceCost.input >= 0);
 });
 test('unknown names, aliases and unadvertised vendor protocols remain unknown', () => {
   assert.equal(resolveKnownCapabilities(entry('gpt-4o-unverified-alias', ['openai-responses'])), undefined);
   assert.equal(resolveKnownCapabilities(entry('gpt-4o', ['anthropic-messages'])), undefined);
+});
+test('media models cannot bypass direct-vendor exclusions through Azure or Vertex', () => {
+  for (const id of ['gpt-realtime-2.1', 'gemini-3.1-flash-lite-image', 'gpt-image-2']) {
+    assert.equal(resolveKnownCapabilities(entry(id, ['openai-completions'])), undefined, id);
+    assert.equal(resolveKnownCapabilities(entry(id, ['openai-responses'])), undefined, id);
+  }
+});
+
+test('known input ceilings constrain selectable models without changing their vendor price', () => {
+  const result = resolveKnownCapabilities(entry('gpt-6.1-sol', ['openai-completions']));
+  assert.ok(result);
+  assert.equal(result.contextWindow, 922000);
+  assert.equal(result.maxTokens, 128000);
+  assert.equal(result.reasoning, true);
+  assert.equal(result.thinkingLevelMap?.max, 'max');
+  assert.equal(result.referenceCost?.input, 2);
+  assert.equal(result.referenceCost?.output, 10);
 });
 test('native vendor fallbacks are removed from gateway capabilities', () => {
   const result = resolveKnownCapabilities(entry('claude-fable-5', ['anthropic-messages']));
