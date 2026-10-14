@@ -21,6 +21,8 @@ REPOSITORY_URL = f"git+https://github.com/{REPOSITORY}.git"
 REGISTRY = f"https://registry.npmjs.org/{quote(PACKAGE, safe='')}"
 MAX_ARCHIVE = 32 * 1024 * 1024
 MAX_CONTENT = 64 * 1024 * 1024
+REGISTRY_READBACK_SECONDS = 240
+REGISTRY_POLL_SECONDS = 5
 
 
 def inputs():
@@ -133,10 +135,16 @@ def artifact(source, directory):
     print(f"Verified {filename}: sha256={expected_sha}, source={head}, files={len(files)}, asset={asset['id']}")
 
 
-def registry_json(url):
+def registry_json(url, *, deadline=None):
     request = Request(url, headers={"Accept": "application/json", "User-Agent": "pi-lmm-release-verifier"})
+    timeout = 20
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Registry read-back deadline expired before the next HTTP request.")
+        timeout = min(timeout, remaining)
     try:
-        with urlopen(request, timeout=20) as response:
+        with urlopen(request, timeout=timeout) as response:
             content = response.read(8 * 1024 * 1024 + 1)
     except HTTPError as error:
         if error.code == 404:
@@ -147,12 +155,12 @@ def registry_json(url):
     return json.loads(content)
 
 
-def registry_snapshot(version):
-    document = registry_json(REGISTRY)
+def registry_snapshot(version, *, deadline=None):
+    document = registry_json(REGISTRY, deadline=deadline)
     tags = {} if document is None else document.get("dist-tags")
     if not isinstance(tags, dict) or (document is not None and document.get("name") != PACKAGE):
         raise ValueError("Invalid registry package metadata.")
-    published = registry_json(f"{REGISTRY}/{quote(version, safe='')}")
+    published = registry_json(f"{REGISTRY}/{quote(version, safe='')}", deadline=deadline)
     if published is not None:
         package_identity(published, version)
     return published, tags
@@ -162,10 +170,15 @@ def registry(phase, archive, state):
     version, expected_sha, tag, _ = inputs()
     content = archive_bytes(archive, expected_sha)
     integrity = "sha512-" + base64.b64encode(hashlib.sha512(content).digest()).decode()
-    attempts = 6 if phase == "after" else 1
     before = json.loads(state.read_text()) if phase == "after" else None
-    for attempt in range(attempts):
-        published, tags = registry_snapshot(version)
+    if before is not None and (before.get("integrity") != integrity or before.get("version") != version or
+                               before.get("tag") != tag or "requested_tag_value" not in before):
+        raise ValueError("Registry read-back state does not match the accepted publish inputs.")
+    deadline = time.monotonic() + REGISTRY_READBACK_SECONDS if phase == "after" else None
+    while True:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise ValueError("Registry read-back deadline expired without the expected version, tag and provenance; inspect before retrying.")
+        published, tags = registry_snapshot(version, deadline=deadline) if phase == "after" else registry_snapshot(version)
         if published is not None and published.get("dist", {}).get("integrity") != integrity:
             raise ValueError("This registry version exists with different archive bytes; refusing to publish or retry.")
         if phase == "before":
@@ -173,21 +186,33 @@ def registry(phase, archive, state):
                 raise ValueError("Matching version already exists, but the requested dist-tag differs; no tag is moved automatically.")
             if published is None and tags.get(tag) == version:
                 raise ValueError("Registry tag exists but its version read returned 404; inspect state before retrying.")
-            state.write_text(json.dumps({"latest": tags.get("latest"), "integrity": integrity, "version": version, "tag": tag}) + "\n")
+            state.write_text(json.dumps({"latest": tags.get("latest"), "integrity": integrity, "version": version,
+                                         "tag": tag, "requested_tag_value": tags.get(tag)}) + "\n")
             print(f"publish_required={'true' if published is None else 'false'}")
             return
-        if before.get("integrity") != integrity or before.get("version") != version or before.get("tag") != tag:
-            raise ValueError("Registry read-back state does not match the accepted publish inputs.")
         if tag != "latest" and tags.get("latest") != before.get("latest"):
             raise ValueError("Observed latest moved during publication; inspect registry state without an automatic rollback.")
+        if tags.get(tag) not in {None, before["requested_tag_value"], version}:
+            raise ValueError("Requested distribution tag moved to an unexpected version; inspect without an automatic tag change.")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError("Registry read-back deadline expired without the expected version, tag and provenance; inspect before retrying.")
         attestations = {} if published is None else published.get("dist", {}).get("attestations", {})
         if published is not None and tags.get(tag) == version and attestations.get("url"):
             print(json.dumps({"package": PACKAGE, "version": version, "integrity": integrity,
                               "dist_tags": tags, "attestations": attestations}, indent=2))
             return
-        if attempt + 1 < attempts:
-            time.sleep(2)
-    raise ValueError("Registry read-back did not confirm the expected version, tag and provenance; inspect before retrying.")
+        missing = []
+        if published is None:
+            missing.append("version metadata")
+        if tags.get(tag) != version:
+            missing.append(f"dist-tag {tag}")
+        if not attestations.get("url"):
+            missing.append("provenance metadata")
+        delay = min(REGISTRY_POLL_SECONDS, remaining)
+        print(f"Registry is processing {PACKAGE}@{version}; waiting for {', '.join(missing)}; "
+              f"retrying read-back in {delay:g}s ({remaining:.0f}s remaining).", file=sys.stderr, flush=True)
+        time.sleep(delay)
 
 
 def main():
