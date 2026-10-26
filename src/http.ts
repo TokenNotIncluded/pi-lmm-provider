@@ -123,12 +123,15 @@ export class LmmHttp {
       requireValue(isJson);
       requireValue(response.body);
       const reader = response.body.getReader();
+      const cancel = () => { void reader.cancel().catch(() => {}); };
+      signal.addEventListener('abort', cancel, { once: true });
       const chunks: Uint8Array[] = [];
       let bytes = 0;
       try {
         while (true) {
           signal.throwIfAborted();
           const { value, done } = await reader.read();
+          signal.throwIfAborted();
           if (done) break;
           bytes += value.byteLength;
           requireValue(
@@ -138,6 +141,7 @@ export class LmmHttp {
           chunks.push(value);
         }
       } finally {
+        signal.removeEventListener('abort', cancel);
         await reader.cancel().catch(() => {});
         reader.releaseLock();
       }

@@ -33,6 +33,7 @@
     ]
   },
   "files": [
+    "assets",
     "src/*.ts",
     "src/models-dev.json",
     "src/models-dev.LICENSE",
