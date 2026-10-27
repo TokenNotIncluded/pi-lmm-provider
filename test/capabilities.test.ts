@@ -2,7 +2,40 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Model } from '@earendil-works/pi-ai';
 import { resolveKnownCapabilities } from '../src/capabilities.ts';
-import type { CatalogEntry } from '../src/catalog.ts';
+import { admitCatalog, type Catalog, type CatalogEntry } from '../src/catalog.ts';
+
+test('exact SDK metadata fills missing and conflicting Pi profiles conservatively', () => {
+  for (const [id, api] of [
+    ['gpt-5.6', 'openai-responses'], ['deepseek-v4-flash', 'openai-completions'],
+    ['glm-5', 'openai-completions'], ['MiniMax-M2', 'anthropic-messages'],
+  ] as const) {
+    const result = resolveKnownCapabilities(entry(id, [api]));
+    assert.ok(result, id);
+    assert.equal(result.api, api);
+    assert.ok(result.contextWindow > 0 && result.maxTokens > 0);
+    assert.equal(result.reasoning, false);
+    assert.deepEqual(result.input, ['text']);
+    assert.equal(result.thinkingLevelMap, undefined);
+    assert.equal(result.referenceCost, undefined, 'another proxy price must not be selected');
+    assert.match(result.provenance, /restricted text profile/);
+    assert.equal('allowedFallbackModels' in result.compat, false);
+  }
+});
+
+test('SDK metadata still requires exact identity and its server-advertised protocol', () => {
+  for (const [id, apis] of [
+    ['gpt-5.6', ['openai-completions']], ['MiniMax-M2', ['openai-responses']],
+    ['gemini-4-argon', ['openai-completions']], ['gpt-5.6-alias', ['openai-responses']],
+    ['GPT-5.6', ['openai-responses']], ['gpt-image-2', ['openai-responses']],
+  ] as const) assert.equal(resolveKnownCapabilities(entry(id, [...apis])), undefined, id);
+});
+
+test('metadata-only entries without a server cost remain read-only', () => {
+  const model = { ...entry('gpt-5.6', ['openai-responses']), native_cost: null };
+  const admissions = admitCatalog({ models: [model] } as Catalog, 'https://issuer.invalid', resolveKnownCapabilities);
+  assert.equal(admissions[0]?.model, undefined);
+  assert.match(admissions[0]?.reason ?? '', /No native or reference cost/);
+});
 
 function entry(model: string, apis: CatalogEntry['apis'], group = 'default'): CatalogEntry {
   return { upstream_model: model, apis, group } as CatalogEntry;

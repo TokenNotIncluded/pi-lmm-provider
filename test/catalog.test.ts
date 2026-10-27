@@ -78,9 +78,20 @@ test('selectable models precede read-only entries even beyond the original 40-en
   const report = priceReport([...unavailable, admission!]);
   assert.match(report, /1 selectable chat models, 45 read-only entries/);
   assert.ok(report.indexOf('default / gpt-test') < report.indexOf('default / unavailable-0'));
-  assert.match(report, /Showing 40 of 46/);
+  assert.match(report, /default \/ unavailable-44/);
+  assert.doesNotMatch(report, /Showing 40/);
   assert.match(priceReport(unavailable, 'unavailable-44'), /0 selectable chat models, 1 read-only entries/);
   assert.match(priceReport(unavailable, 'absent'), /No catalog entries match/);
+});
+
+test('all authorized groups are visible, including empty groups, with unknown values preserved', () => {
+  const empty: Group = { id: 'ZW1wdHk', name: 'empty', scope: 'group:ZW1wdHk', multiplier: null };
+  const report = priceReport([{ entry: model, reason: 'Capability metadata unavailable; not registered in /model.' }], '', [group, empty]);
+  assert.match(report, /Authorized groups \(2\)/);
+  assert.match(report, /empty · group ×unknown · 0 matching catalog entries/);
+  assert.match(report, /default · group ×2 · 1 matching catalog entries/);
+  assert.match(report, /Capability metadata unavailable/);
+  assert.match(priceReport([], 'empty', [group, empty]), /Authorized groups \(1\)/);
 });
 
 test('report rounds binary display artifacts without changing pricing or inventing a request price', () => {

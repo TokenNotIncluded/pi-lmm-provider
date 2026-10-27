@@ -134,13 +134,19 @@ export function admitCatalog(catalog: Catalog, issuer: string, resolve: Capabili
 
 function amount(value: number | null): string { return value === null ? 'unknown' : String(Number(value.toPrecision(12))); }
 
-export function priceReport(admissions: readonly Admission[], filter = ''): string {
+export function priceReport(admissions: readonly Admission[], filter = '', groups: readonly Group[] = []): string {
   const selected = admissions.filter(({ entry }) => `${entry.id} ${entry.name} ${entry.group} ${entry.upstream_model}`.toLowerCase().includes(filter.toLowerCase()));
   const selectable = selected.filter(({ model }) => model);
   const readOnly = selected.filter(({ model }) => !model);
   const ordered = [...selectable, ...readOnly];
   const lines = [`LMM catalog: ${selectable.length} selectable chat models, ${readOnly.length} read-only entries. Selectable models shown first.`];
-  lines.push(...ordered.slice(0, 40).map(({ entry, model, reason }) => {
+  const selectedGroups = groups.filter((group) => !filter || `${group.id} ${group.name}`.toLowerCase().includes(filter.toLowerCase()) ||
+    selected.some(({ entry }) => entry.group_id === group.id));
+  if (selectedGroups.length) {
+    lines.push(`Authorized groups (${selectedGroups.length}):`);
+    lines.push(...selectedGroups.map((group) => `  ${group.name} · group ×${amount(group.multiplier)} · ${selected.filter(({ entry }) => entry.group_id === group.id).length} matching catalog entries`));
+  }
+  lines.push(...ordered.map(({ entry, model, reason }) => {
     const p = entry.pricing;
     const expression = p.unit === 'expression' || p.price_basis === 'tiered_expression';
     const rates = expression
@@ -148,7 +154,7 @@ export function priceReport(admissions: readonly Admission[], filter = ''): stri
       : p.unit === 'request'
         ? `  request ${amount(p.request)}; token rates are not provided.`
         : `  input ${amount(p.input)}, output ${amount(p.output)}, cache read ${amount(p.cache_read)}, cache write ${amount(p.cache_write)}, request ${amount(p.request)}`;
-    const selection = model ? `Select using native /model.${entry.native_cost ? '' : ' Pi cost uses vendor reference rates, not an LMM quote.'}`
+    const selection = model ? `Select using native /model.${entry.native_cost ? '' : p.price_basis === 'cached_model_rates' ? ' Pi cost retains a cached model estimate; server rates are unknown.' : ' Pi cost uses vendor reference rates, not an LMM quote.'}`
       : reason ?? 'Read-only; not registered in /model.';
     return [
       `${entry.group} / ${entry.upstream_model}`,
@@ -158,7 +164,6 @@ export function priceReport(admissions: readonly Admission[], filter = ''): stri
     ].join('\n');
   }));
   if (!selected.length) lines.push('No catalog entries match this filter.');
-  if (selected.length > 40) lines.push(`Showing 40 of ${selected.length}; pass an ID or name to /lmm-prices to inspect other entries, including read-only models.`);
   lines.push('Displayed rates are rounded to 12 significant digits. Wallet display currency does not change server pricing.');
   lines.push('Final billing depends on usage and current server policy; this is not a locked quote or a budget approval. Unknown is not free.');
   return lines.join('\n');

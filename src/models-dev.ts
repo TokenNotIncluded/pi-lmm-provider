@@ -1,4 +1,21 @@
 import snapshot from './models-dev.json' with { type: 'json' };
+import type { LmmApi } from './protocol.ts';
+
+/** Reviewed SDK adapters, not model-name or family guesses. Unknown adapters stay gated. */
+export function parseMetadataTransport(npm: unknown): LmmApi | undefined {
+  switch (npm) {
+    case '@ai-sdk/openai': return 'openai-responses';
+    case '@ai-sdk/openai-compatible': return 'openai-completions';
+    case '@ai-sdk/anthropic': return 'anthropic-messages';
+    default: return undefined;
+  }
+}
+
+export function resolveMetadataTransport(provider: string, id: string): LmmApi | undefined {
+  const records = (snapshot as { transports?: Record<string, Record<string, LmmApi>> }).transports;
+  return records && Object.hasOwn(records, provider) && Object.hasOwn(records[provider]!, id)
+    ? records[provider]![id] : undefined;
+}
 
 /** models.dev supplies conservative capacities, not transport flags or account prices. */
 export interface ModelMetadata {

@@ -5,7 +5,7 @@ import { balanceStatus, parseBalance, type Balance } from './balance.ts';
 import { type CurrencyPreference } from './currency.ts';
 import {
   admitCatalog, nativeModelId, parseCatalog, priceReport,
-  type Admission, type CapabilityResolver, type CatalogEntry, type Pricing,
+  type Admission, type CapabilityResolver, type CatalogEntry, type Group, type Pricing,
 } from './catalog.ts';
 import { resolveKnownCapabilities } from './capabilities.ts';
 import { LmmHttp, type HttpOptions } from './http.ts';
@@ -55,16 +55,18 @@ function cachedEntry(model: unknown, updatedAt: number): CatalogEntry | undefine
     if (nativeModelId({ group, upstream_model: upstream }) !== model.id) return undefined;
     if (!validCost(model.cost)) return undefined;
     const pricing: Pricing = {
-      currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates',
+      // Pi persists numeric model estimates, not the server billing contract.
+      // Keep those estimates for host continuity without inventing a server quote.
+      currency: 'unknown', unit: 'unknown', price_basis: 'cached_model_rates',
       group_multiplier: null, trust_multiplier: null,
-      input: model.cost.input, output: model.cost.output, cache_read: model.cost.cacheRead, cache_write: model.cost.cacheWrite,
+      input: null, output: null, cache_read: null, cache_write: null,
       request: null, final_cost_depends_on_usage: true, updated_at: updatedAt,
     };
     const group_id = base64url(group);
     return {
       id: `lmm:${group_id}:${base64url(upstream)}`, group_id, group, upstream_model: upstream, name: `${group} / ${upstream}`,
       apis: [model.api as LmmApi], pricing,
-      native_cost: structuredClone(model.cost),
+      native_cost: null,
     };
   } catch { return undefined; }
 }
@@ -74,6 +76,7 @@ interface Snapshot {
   accessHash: string;
   expires: number;
   admissions: Admission[];
+  groups: Group[];
   catalogUpdatedAt: number;
   checkedAt: number;
   catalogStale: boolean;
@@ -214,11 +217,12 @@ export class LmmIntegration {
     const scope = new Set(value.scope.split(' '));
     const snapshot: Snapshot = {
       session: value.lmm_session, accessHash: fingerprint(value.access), expires: value.expires,
-      admissions: [], catalogUpdatedAt: 0, checkedAt: Date.now(), catalogStale: false, balanceStale: false,
+      admissions: [], groups: [], catalogUpdatedAt: 0, checkedAt: Date.now(), catalogStale: false, balanceStale: false,
     };
     const catalog = await this.http.bearer('/api/oauth2/catalog', value.access, signal);
     const parsed = parseCatalog(catalog, this.http.resource, value.scope);
     snapshot.catalogUpdatedAt = parsed.updated_at;
+    snapshot.groups = parsed.groups;
     if (scope.has('models:invoke')) snapshot.admissions = admitCatalog(parsed, this.http.issuer, this.capabilities);
     else snapshot.admissions = parsed.models.map((entry) => ({ entry, reason: 'models:invoke was not granted; read-only.' }));
     if (scope.has('balance:read')) {
@@ -247,7 +251,12 @@ export class LmmIntegration {
     const scope = new Set(value.scope.split(' '));
     const admitted = complete.filter((entry) => scope.has(`group:${entry.group_id}`));
     const admissions = scope.has('models:invoke')
-      ? admitCatalog({ schema_version: 1, resource: this.http.resource, updated_at: updatedAt, groups: [], models: admitted }, this.http.issuer, this.capabilities)
+      ? admitCatalog({ schema_version: 1, resource: this.http.resource, updated_at: updatedAt, groups: [], models: admitted }, this.http.issuer, (entry) => {
+        const capabilities = this.capabilities?.(entry);
+        const cached = stored.models.find((model) => model.id === nativeModelId(entry));
+        return capabilities && isCachedChatModel(cached)
+          ? { ...capabilities, referenceCost: structuredClone(cached.cost) } : undefined;
+      })
       : [];
     for (const admission of admissions) {
       const cached = stored.models.find((model) => model.id === admission.model?.id);
@@ -255,7 +264,9 @@ export class LmmIntegration {
     }
     return {
       session: value.lmm_session, accessHash: fingerprint(value.access), expires: value.expires,
-      admissions, catalogUpdatedAt: updatedAt, checkedAt, catalogStale: true, balanceStale: true,
+      admissions, groups: [...scope].filter((item) => item.startsWith('group:')).map((item) => ({
+        id: item.slice(6), name: Buffer.from(item.slice(6), 'base64url').toString('utf8'), scope: item, multiplier: null,
+      })), catalogUpdatedAt: updatedAt, checkedAt, catalogStale: true, balanceStale: true,
     };
   }
 
@@ -263,6 +274,7 @@ export class LmmIntegration {
     const scope = new Set(value.scope.split(' '));
     return {
       ...snapshot, session: value.lmm_session, accessHash: fingerprint(value.access), expires: value.expires,
+      groups: snapshot.groups.filter((group) => scope.has(group.scope)),
       admissions: scope.has('models:invoke')
         ? snapshot.admissions.filter(({ entry }) => scope.has(`group:${entry.group_id}`)) : [],
       catalogStale: true, balance: undefined, balanceStale: true,
@@ -368,7 +380,7 @@ export class LmmIntegration {
   }
 
   prices(filter = ''): string {
-    return this.current ? priceReport(this.current.admissions, filter) : 'No account-scoped LMM catalog. Use /login, then retry /lmm-prices. No models or capabilities are guessed.';
+    return this.current ? `${this.current.catalogStale ? 'Cached catalog: server prices and full model coverage need an online refresh.\n' : ''}${priceReport(this.current.admissions, filter, this.current.groups)}` : 'No account-scoped LMM catalog. Use /login, then retry /lmm-prices. No models or capabilities are guessed.';
   }
 
   async revoke(access: string, signal: AbortSignal): Promise<void> {

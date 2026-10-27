@@ -196,7 +196,7 @@ The workflow checks the release asset identity, hash, package name/version/repos
 
 Provenance records this publishing workflow and its commit. The tag/source comparison binds the previously accepted artifact to its released source; it does not claim the original local build ran in CI. Live OAuth, paid model access and billing acceptance remain separate from package publication.
 
-The server-side OAuth contract is documented in the [LMM API repository](https://github.com/TokenNotIncluded/api.lmm.best/blob/main/apps/api-go/service/oauth_contract.md).
+The server-side OAuth contract is documented in the [LMM API repository](https://github.com/TokenNotIncluded/lmm-api/blob/main/apps/api-go/service/oauth_contract.md).
 
 ## Native Pi file tools
 

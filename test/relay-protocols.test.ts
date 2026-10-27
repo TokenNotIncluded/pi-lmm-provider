@@ -212,6 +212,76 @@ for (const protocol of ["openai-responses", "anthropic-messages"] as const) {
   );
 }
 
+test("metadata-only models keep identical upstream IDs isolated across authorized groups", { timeout: 15000 }, async () => {
+  const modelName = "gpt-5.6";
+  const groups = ["default", "second"].map((name) => ({
+    name, id: Buffer.from(name).toString("base64url"),
+  }));
+  const routes: string[] = [];
+  const requestFetch: typeof fetch = async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url.endsWith("/catalog")) return json({
+      schema_version: 1, resource: `${issuer}/api/oauth2`, updated_at: 1789240000,
+      groups: groups.map(({ name, id }) => ({ name, id, scope: `group:${id}`, multiplier: 1 })),
+      models: groups.map(({ name, id }) => ({
+        id: `lmm:${id}:${Buffer.from(modelName).toString("base64url")}`,
+        group_id: id, group: name, upstream_model: modelName, name: modelName,
+        apis: ["openai-responses"],
+        pricing: { currency: "USD", unit: "million_tokens", price_basis: "configured_base_rates",
+          group_multiplier: 1, trust_multiplier: 1, input: 1, output: 2, cache_read: 0.25,
+          cache_write: 1.25, request: null, final_cost_depends_on_usage: true, updated_at: 1789240000 },
+        native_cost: { input: 1, output: 2, cacheRead: 0.25, cacheWrite: 1.25 },
+      })),
+    });
+    if (url.endsWith("/balance")) return json({ schema_version: 1, currency: "platform_credit",
+      balance: 1, quota: 500000, quota_per_unit: 500000, updated_at: 1789240000, authorization_limit: null });
+    assert.equal(url, `${issuer}/v1/responses`);
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    assert.equal(headers.get("authorization"), "Bearer lmm_at_two_groups_fixture");
+    const selectedGroup = headers.get("x-lmm-group");
+    const route = groups.find(({ id }) => id === selectedGroup);
+    assert.ok(route, "transport must select exactly one authorized group");
+    routes.push(route.name);
+    const body = JSON.parse(String(init?.body ?? (input instanceof Request ? await input.clone().text() : "")));
+    assert.equal(body.model, modelName, "group must not be encoded in the upstream model ID");
+    assert.equal(body.stream, true);
+    const item = { ...message, content: [{ type: "output_text", text: route.name, annotations: [] }] };
+    return sse([
+      { type: "response.created", response: { id: "resp_groups", status: "in_progress", output: [] } },
+      { type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } },
+      { type: "response.content_part.added", output_index: 0, content_index: 0, item_id: "msg_1", part: { type: "output_text", text: "", annotations: [] } },
+      { type: "response.output_text.delta", output_index: 0, content_index: 0, item_id: "msg_1", delta: route.name },
+      { type: "response.output_item.done", output_index: 0, item },
+      { type: "response.completed", response: { id: "resp_groups", status: "completed", model: modelName, output: [item], usage } },
+    ]);
+  };
+  const integration = new LmmIntegration({ fetch: requestFetch });
+  try {
+    const auth = await integration.provider.auth.oauth!.toAuth({
+      type: "oauth", access: "lmm_at_two_groups_fixture", refresh: "fixture_refresh", expires: Date.now() + 60000,
+      lmm_issuer: issuer, lmm_resource: `${issuer}/api/oauth2`, lmm_session: "two-groups-session",
+      scope: `catalog:read balance:read usage:read models:invoke ${groups.map(({ id }) => `group:${id}`).join(" ")}`,
+    });
+    const models = integration.provider.getModels();
+    assert.deepEqual(models.map(({ id }) => id).sort(), groups.map(({ name }) => `${name} / ${modelName}`).sort());
+    for (const { name, id } of groups) {
+      const selected = models.find((model) => model.id === `${name} / ${modelName}`)!;
+      assert.equal(integration.modelForLegacyId(`lmm:${id}:${Buffer.from(modelName).toString("base64url")}`)?.id, selected.id);
+      const events: AssistantMessageEvent[] = [];
+      for await (const event of integration.provider.streamSimple!(selected,
+        normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: Date.now() }] }),
+        { headers: { ...auth.headers, "X-LMM-Group": groups.find((group) => group.id !== id)!.id }, maxTokens: 32 })) events.push(event);
+      const done = events.find((event) => event.type === "done");
+      assert.ok(done?.type === "done", JSON.stringify(events));
+      assert.equal(done.message.model, selected.id);
+      assert.deepEqual(done.message.content.filter((content) => content.type === "text").map((content) => content.text), [name]);
+    }
+    assert.deepEqual(routes, ["default", "second"], "stale caller group headers must not cross-route either model");
+  } finally {
+    integration.dispose();
+  }
+});
+
 test("OpenAI-compatible gateway models forward the selected reasoning level", { timeout: 15000 }, async () => {
   const modelName = "gpt-6-astra";
   const id = `lmm:${group}:${Buffer.from(modelName).toString("base64url")}`;

@@ -1,7 +1,7 @@
 {
   "source": "https://models.dev/api.json",
-  "fetchedAt": "2026-10-14T15:29:46.723Z",
-  "sourceSha256": "f1309c07b87dca0380c04a25be131536dbbbd5cbfa072acbd07e1c0f67fc7477",
+  "fetchedAt": "2026-10-26T21:36:57.408Z",
+  "sourceSha256": "ce01186c0f21fce8b9bad32b991308848d16b6d72a4816c92ae32f64d46e2d5a",
   "license": "MIT; see models-dev.LICENSE",
   "providers": {
     "openai": {
@@ -148,28 +148,10 @@
           "image"
         ]
       },
-      "gpt-5.2-chat-latest": {
-        "contextWindow": 128000,
-        "maxTokens": 16384,
-        "reasoning": true,
-        "input": [
-          "text",
-          "image"
-        ]
-      },
       "gpt-5.2-pro": {
         "contextWindow": 272000,
         "maxTokens": 128000,
         "reasoning": true,
-        "input": [
-          "text",
-          "image"
-        ]
-      },
-      "gpt-5.3-chat-latest": {
-        "contextWindow": 128000,
-        "maxTokens": 16384,
-        "reasoning": false,
         "input": [
           "text",
           "image"
@@ -311,6 +293,15 @@
         ]
       },
       "gpt-6.1-sol": {
+        "contextWindow": 922000,
+        "maxTokens": 128000,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gpt-6.1-terra": {
         "contextWindow": 922000,
         "maxTokens": 128000,
         "reasoning": true,
@@ -548,7 +539,7 @@
     },
     "deepseek": {
       "deepseek-flash": {
-        "contextWindow": 1000000,
+        "contextWindow": 1048576,
         "maxTokens": 393216,
         "reasoning": true,
         "input": [
@@ -557,7 +548,7 @@
         ]
       },
       "deepseek-v4-flash": {
-        "contextWindow": 1000000,
+        "contextWindow": 1048576,
         "maxTokens": 393216,
         "reasoning": true,
         "input": [
@@ -566,7 +557,7 @@
         ]
       },
       "deepseek-v4-flash-vision-exp": {
-        "contextWindow": 1000000,
+        "contextWindow": 1048576,
         "maxTokens": 393216,
         "reasoning": true,
         "input": [
@@ -575,7 +566,7 @@
         ]
       },
       "deepseek-v4-pro": {
-        "contextWindow": 1000000,
+        "contextWindow": 1048576,
         "maxTokens": 393216,
         "reasoning": true,
         "input": [
@@ -684,6 +675,24 @@
           "text",
           "image"
         ]
+      },
+      "kimi-k3.1-pro": {
+        "contextWindow": 1048576,
+        "maxTokens": 1048576,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "kimi-k3.1-pro-highspeed": {
+        "contextWindow": 1048576,
+        "maxTokens": 1048576,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
       }
     },
     "minimax": {
@@ -737,7 +746,16 @@
       },
       "MiniMax-M3": {
         "contextWindow": 1000000,
-        "maxTokens": 512000,
+        "maxTokens": 524288,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "MiniMax-M3.1-Flash": {
+        "contextWindow": 1000000,
+        "maxTokens": 524288,
         "reasoning": true,
         "input": [
           "text",
@@ -891,6 +909,15 @@
         ]
       },
       "gemini-flash-lite-latest": {
+        "contextWindow": 1048576,
+        "maxTokens": 65536,
+        "reasoning": true,
+        "input": [
+          "text",
+          "image"
+        ]
+      },
+      "gemini-pro-latest": {
         "contextWindow": 1048576,
         "maxTokens": 65536,
         "reasoning": true,
@@ -1114,11 +1141,119 @@
       "gemini-embedding-2",
       "gemini-omni-flash-preview",
       "lyria-3-clip-preview",
-      "lyria-3-pro-preview",
-      "veo-3.1-fast-generate-preview",
-      "veo-3.1-generate-preview",
-      "veo-3.1-lite-generate-preview"
+      "lyria-3-pro-preview"
     ],
     "zai": []
+  },
+  "transports": {
+    "openai": {
+      "gpt-4": "openai-responses",
+      "gpt-4-turbo": "openai-responses",
+      "gpt-4.1": "openai-responses",
+      "gpt-4.1-mini": "openai-responses",
+      "gpt-4.1-nano": "openai-responses",
+      "gpt-4o": "openai-responses",
+      "gpt-4o-2024-05-13": "openai-responses",
+      "gpt-4o-2024-08-06": "openai-responses",
+      "gpt-4o-2024-11-20": "openai-responses",
+      "gpt-4o-mini": "openai-responses",
+      "gpt-5": "openai-responses",
+      "gpt-5-mini": "openai-responses",
+      "gpt-5-nano": "openai-responses",
+      "gpt-5-pro": "openai-responses",
+      "gpt-5.1": "openai-responses",
+      "gpt-5.2": "openai-responses",
+      "gpt-5.2-pro": "openai-responses",
+      "gpt-5.3-codex": "openai-responses",
+      "gpt-5.3-codex-spark": "openai-responses",
+      "gpt-5.4": "openai-responses",
+      "gpt-5.4-mini": "openai-responses",
+      "gpt-5.4-nano": "openai-responses",
+      "gpt-5.4-pro": "openai-responses",
+      "gpt-5.5": "openai-responses",
+      "gpt-5.5-pro": "openai-responses",
+      "gpt-5.6": "openai-responses",
+      "gpt-5.6-luna": "openai-responses",
+      "gpt-5.6-sol": "openai-responses",
+      "gpt-5.6-terra": "openai-responses",
+      "gpt-6-astra": "openai-responses",
+      "gpt-6-luna": "openai-responses",
+      "gpt-6-sol": "openai-responses",
+      "gpt-6.1-sol": "openai-responses",
+      "gpt-6.1-terra": "openai-responses",
+      "gpt-daybreak-blue-latest": "openai-responses",
+      "gpt-daybreak-red-latest": "openai-responses",
+      "o1": "openai-responses",
+      "o1-pro": "openai-responses",
+      "o3": "openai-responses",
+      "o3-mini": "openai-responses",
+      "o3-pro": "openai-responses",
+      "o4-mini": "openai-responses"
+    },
+    "anthropic": {
+      "claude-fable-5": "anthropic-messages",
+      "claude-fable-5-1": "anthropic-messages",
+      "claude-haiku-4-5": "anthropic-messages",
+      "claude-haiku-4-5-20251001": "anthropic-messages",
+      "claude-haiku-5-5": "anthropic-messages",
+      "claude-opus-4-5": "anthropic-messages",
+      "claude-opus-4-5-20251101": "anthropic-messages",
+      "claude-opus-4-6": "anthropic-messages",
+      "claude-opus-4-7": "anthropic-messages",
+      "claude-opus-4-8": "anthropic-messages",
+      "claude-opus-5": "anthropic-messages",
+      "claude-opus-5-5": "anthropic-messages",
+      "claude-sonnet-4-5": "anthropic-messages",
+      "claude-sonnet-4-5-20250929": "anthropic-messages",
+      "claude-sonnet-4-6": "anthropic-messages",
+      "claude-sonnet-5": "anthropic-messages",
+      "claude-sonnet-5-5": "anthropic-messages"
+    },
+    "deepseek": {
+      "deepseek-flash": "openai-completions",
+      "deepseek-v4-flash": "openai-completions",
+      "deepseek-v4-flash-vision-exp": "openai-completions",
+      "deepseek-v4-pro": "openai-completions"
+    },
+    "xai": {},
+    "moonshotai": {
+      "kimi-k2.6": "openai-completions",
+      "kimi-k2.7-code": "openai-completions",
+      "kimi-k2.7-code-highspeed": "openai-completions",
+      "kimi-k3": "openai-completions",
+      "kimi-k3.1-pro": "openai-completions",
+      "kimi-k3.1-pro-highspeed": "openai-completions"
+    },
+    "minimax": {
+      "MiniMax-M2": "anthropic-messages",
+      "MiniMax-M2.1": "anthropic-messages",
+      "MiniMax-M2.5": "anthropic-messages",
+      "MiniMax-M2.5-highspeed": "anthropic-messages",
+      "MiniMax-M2.7": "anthropic-messages",
+      "MiniMax-M2.7-highspeed": "anthropic-messages",
+      "MiniMax-M3": "anthropic-messages",
+      "MiniMax-M3.1-Flash": "anthropic-messages"
+    },
+    "google": {},
+    "zai": {
+      "glm-4.5": "openai-completions",
+      "glm-4.5-air": "openai-completions",
+      "glm-4.5-flash": "openai-completions",
+      "glm-4.5v": "openai-completions",
+      "glm-4.6": "openai-completions",
+      "glm-4.6v": "openai-completions",
+      "glm-4.6v-flash": "openai-completions",
+      "glm-4.7": "openai-completions",
+      "glm-4.7-flash": "openai-completions",
+      "glm-4.7-flashx": "openai-completions",
+      "glm-5": "openai-completions",
+      "glm-5-turbo": "openai-completions",
+      "glm-5.1": "openai-completions",
+      "glm-5.2": "openai-completions",
+      "glm-5.3": "openai-completions",
+      "glm-5.3-flash": "openai-completions",
+      "glm-5.3-flashx": "openai-completions",
+      "glm-5v-turbo": "openai-completions"
+    }
   }
 }

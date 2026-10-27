@@ -11,7 +11,7 @@ test('offline metadata refresh records source digest, excludes non-chat and pres
   const directory = mkdtempSync(join(tmpdir(), 'pi-lmm-metadata-'));
   try {
     const output = join(directory, 'snapshot.json');
-    const fixture = Object.fromEntries(metadataProviders.map((provider) => [provider, { models: {
+    const fixture = Object.fromEntries(metadataProviders.map((provider) => [provider, { npm: '@ai-sdk/openai-compatible', models: {
       verified: { id: 'verified', tool_call: true, reasoning: true,
         limit: { context: 1000, input: 800, output: 200 }, modalities: { input: ['text'], output: ['text'] },
         cost: { input: 999, output: 999 } },
@@ -30,6 +30,13 @@ test('offline metadata refresh records source digest, excludes non-chat and pres
     assert.ok(Number.isFinite(Date.parse(snapshot.fetchedAt)));
     assert.deepEqual(snapshot.providers.openai.verified, { contextWindow: 800, maxTokens: 200, reasoning: true, input: ['text'] });
     assert.deepEqual(snapshot.excluded.openai, ['media']);
+    assert.deepEqual(snapshot.transports.openai, { verified: 'openai-completions' });
+    fixture.openai.models.verified.provider = { npm: '@unreviewed/adapter' };
+    assert.equal(refresh(JSON.stringify(fixture)).status, 0);
+    assert.deepEqual(JSON.parse(readFileSync(output, 'utf8')).transports.openai, {});
+    fixture.openai.models.verified.provider = { npm: '@ai-sdk/anthropic' };
+    assert.equal(refresh(JSON.stringify(fixture)).status, 0);
+    assert.deepEqual(JSON.parse(readFileSync(output, 'utf8')).transports.openai, { verified: 'anthropic-messages' });
     assert.ok(!JSON.stringify(snapshot).includes('999'), 'public prices are not imported into account metadata');
     writeFileSync(output, 'preserve-me');
     assert.notEqual(refresh('{}').status, 0);

@@ -236,6 +236,12 @@ test('restores a session-bound catalog and retains it when a rotated-token refre
     assert.equal(offline.provider.getModels().length, 1);
     assert.equal(offline.provider.getModels()[0]!.name, stored.models[0]!.name);
     assert.equal(offline.provider.getModels()[0]!.cost.tiers?.[0]?.output, 12);
+    const report = offline.prices();
+    assert.match(report, /Cached catalog: server prices and full model coverage need an online refresh/);
+    assert.match(report, /unknown\/unknown; cached_model_rates/);
+    assert.match(report, /input unknown, output unknown/);
+    assert.match(report, /Pi cost retains a cached model estimate; server rates are unknown/);
+    assert.doesNotMatch(report, /configured_base_rates|input 2, output 8/);
     assert.equal(offline.provider.filterModels!(offline.provider.getModels(), rotated).length, 1);
     await assert.rejects(offline.provider.refreshModels!({
       ...context(rotated, true), stored: stored ?? undefined,
