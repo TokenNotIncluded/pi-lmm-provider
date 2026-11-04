@@ -23,7 +23,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - name: Test the selected official Pi host
-        run: npm install --no-save --package-lock=false --ignore-scripts "@earendil-works/pi-ai@${{ matrix.pi }}" "@earendil-works/pi-coding-agent@${{ matrix.pi }}"
+        run: node .github/scripts/install-pi-matrix.mjs "${{ matrix.pi }}"
       - run: npm run typecheck
       - run: npm test
       - run: npm run pack:check

@@ -12,6 +12,7 @@ export interface MetadataSnapshot {
   excluded: Record<string, string[]>;
   transports?: Record<string, Record<string, LmmApi>>;
   names?: Record<string, Record<string, string>>;
+  canonicalIds?: Record<string, Record<string, string>>;
 }
 
 export const bundledMetadata = snapshot as MetadataSnapshot;
@@ -39,7 +40,6 @@ export interface ModelMetadata {
   reasoning: boolean;
   input: ('text' | 'image')[];
 }
-export const metadataProviders = Object.keys(bundledMetadata.providers);
 
 /** Reject partial/non-chat records instead of inventing limits or capabilities. */
 export function parseModelMetadata(value: unknown): ModelMetadata | undefined {
@@ -78,7 +78,6 @@ export function isExcludedModelMetadata(provider: string, id: string, data = bun
   return !!excluded && Object.hasOwn(excluded, provider) && excluded[provider]!.includes(id);
 }
 
-export const metadataProvenance = `models.dev (${snapshot.fetchedAt})`;
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -96,16 +95,21 @@ export function parseMetadataCatalog(value: unknown, fetchedAt: string, sourceSh
   const excluded: MetadataSnapshot['excluded'] = Object.create(null);
   const transports: NonNullable<MetadataSnapshot['transports']> = Object.create(null);
   const names: NonNullable<MetadataSnapshot['names']> = Object.create(null);
+  const canonicalIds: NonNullable<MetadataSnapshot['canonicalIds']> = Object.create(null);
   let accepted = 0;
   for (const [provider, section] of Object.entries(value)) {
     if (!identifier(provider) || !record(section) || !record(section.models)) throw new Error('Invalid models.dev provider');
     const records: Record<string, ModelMetadata> = Object.create(null);
     const protocols: Record<string, LmmApi> = Object.create(null);
     const labels: Record<string, string> = Object.create(null);
+    const identities: Record<string, string> = Object.create(null);
     const rejected: string[] = [];
     for (const [id, model] of Object.entries(section.models)) {
       if (!identifier(id) || !record(model) || model.id !== id) throw new Error('Invalid models.dev model ID');
       if (typeof model.name === 'string' && identifier(model.name)) labels[id] = model.name;
+      if (typeof model.canonical_model_id === 'string' && identifier(model.canonical_model_id)) {
+        identities[id] = model.canonical_model_id;
+      }
       const metadata = parseModelMetadata(model);
       if (!metadata) { rejected.push(id); continue; }
       records[id] = metadata;
@@ -119,8 +123,9 @@ export function parseMetadataCatalog(value: unknown, fetchedAt: string, sourceSh
     excluded[provider] = rejected;
     transports[provider] = protocols;
     names[provider] = labels;
+    canonicalIds[provider] = identities;
   }
   if (!accepted) throw new Error('No valid models.dev chat metadata');
   return { source: MODELS_DEV_URL, fetchedAt, sourceSha256, license: 'MIT; see models-dev.LICENSE',
-    providers, excluded, transports, names };
+    providers, excluded, transports, names, canonicalIds };
 }

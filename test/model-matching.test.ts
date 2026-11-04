@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { matchModelMetadata, modelNameKey } from '../src/model-matching.ts';
 import { parseMetadataCatalog } from '../src/models-dev.ts';
 
-const model = (id: string, name = id, context = 128000) => ({ id, name, tool_call: true, reasoning: true,
+const model = (id: string, name = id, context = 128000) => ({ id, name, canonical_model_id: `canonical/${id}`, tool_call: true, reasoning: true,
   limit: { context, output: 16000 }, modalities: { input: ['text', 'image'], output: ['text'] } });
 const snapshot = (catalog: unknown) => parseMetadataCatalog(catalog, '2026-11-04T00:00:00Z', '0'.repeat(64));
 const data = snapshot({ 'future-vendor': { npm: '@ai-sdk/openai-compatible', models: {
@@ -65,12 +65,12 @@ test('duplicate provider records use conservative limits independent of iteratio
   }
 });
 
-test('non-chat exclusions also apply to normalized names and vendor-qualified IDs', () => {
+test('canonical non-chat exclusions also apply to normalized names and vendor-qualified IDs', () => {
   for (const id of ['novel-image', 'NOVEL Image', 'future-vendor/novel-image']) {
     assert.equal(matchModelMetadata(id, data)?.status, 'excluded');
   }
   const conflict = snapshot({ first: { models: { 'novel-1': model('novel-1') } },
-    second: { models: { 'novel-1': { ...model('novel-1'), tool_call: false } } } });
+    canonical: { models: { 'novel-1': { ...model('novel-1'), tool_call: false } } } });
   assert.equal(matchModelMetadata('novel-1', conflict)?.status, 'excluded');
 });
 
@@ -84,4 +84,27 @@ test('malformed directories fail without requiring any fixed provider section', 
   assert.deepEqual(withMedia.excluded.imageVendor, ['media']);
   assert.equal(matchModelMetadata('__proto__', data), undefined);
   assert.equal(matchModelMetadata('constructor', data), undefined);
+});
+
+
+test('canonical identity rejects unrelated same-name offerings and permits explicit directory aliases', () => {
+  const different = snapshot({ first: { models: { shared: { ...model('shared'), canonical_model_id: 'lab-one/model' } } },
+    second: { models: { shared: { ...model('shared'), canonical_model_id: 'lab-two/model' } } } });
+  assert.equal(matchModelMetadata('shared', different)?.status, 'ambiguous');
+  assert.equal(matchModelMetadata('first/shared', different)?.status, 'matched');
+  const unlinked = snapshot({ first: { models: { shared: { ...model('shared'), canonical_model_id: undefined } } },
+    second: { models: { shared: { ...model('shared'), canonical_model_id: undefined } } } });
+  assert.equal(matchModelMetadata('shared', unlinked)?.status, 'ambiguous');
+  const linked = snapshot({ relay: { models: { 'serving-alias': { ...model('serving-alias'), canonical_model_id: 'lab/novel-8' } } } });
+  assert.equal(matchModelMetadata('lab/novel-8', linked)?.status, 'matched');
+  assert.equal(matchModelMetadata('Novel 8', linked)?.status, 'matched');
+});
+
+test('an incomplete proxy cannot veto a valid canonical model, while its own route remains excluded', () => {
+  const models = { 'novel-1': model('novel-1') };
+  const input = snapshot({ canonical: { models }, proxy: { models: {
+    'novel-1': { ...model('novel-1'), tool_call: false },
+  } } });
+  assert.equal(matchModelMetadata('novel-1', input)?.status, 'matched');
+  assert.equal(matchModelMetadata('proxy/novel-1', input)?.status, 'excluded');
 });
