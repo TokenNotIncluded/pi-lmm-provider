@@ -108,3 +108,15 @@ test('an incomplete proxy cannot veto a valid canonical model, while its own rou
   assert.equal(matchModelMetadata('novel-1', input)?.status, 'matched');
   assert.equal(matchModelMetadata('proxy/novel-1', input)?.status, 'excluded');
 });
+
+test('a complete unlinked same-name model remains ambiguous beside a canonical record', () => {
+  const data = snapshot({ labA: { models: { 'atlas-8b': {
+    ...model('atlas-8b', 'Atlas 8B'), canonical_model_id: 'labA/atlas-8b',
+  } } }, labB: { models: { 'atlas-8b': {
+    ...model('atlas-8b', 'Atlas 8B', 32000), canonical_model_id: undefined,
+  } } } });
+  for (const id of ['atlas-8b', 'Atlas 8B']) assert.equal(matchModelMetadata(id, data)?.status, 'ambiguous');
+  const qualified = matchModelMetadata('labB/atlas-8b', data);
+  assert.equal(qualified?.status, 'matched');
+  if (qualified?.status === 'matched') assert.equal(qualified.metadata.contextWindow, 32000);
+});

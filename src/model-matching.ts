@@ -72,19 +72,25 @@ export function matchModelMetadata(id: string, data = bundledMetadata): Metadata
     modelNameKey(row.canonicalId ?? `${row.provider}/${row.id}`)));
   if (identities.size !== 1) return { status: 'ambiguous' };
   if (canonical.length) {
+    // A complete unlinked offering may be a different vendor's same-name model.
+    // Only its own provider-qualified ID can establish the canonical identity.
+    if (candidates.some((row) => !row.canonicalId && row.metadata &&
+      !identities.has(modelNameKey(`${row.provider}/${row.id}`)))) return { status: 'ambiguous' };
     // Prefer the canonical lab's own entry over incomplete proxy offerings.
-    const direct = canonical.filter((row) => modelNameKey(row.provider) === modelNameKey(row.canonicalId!.split('/')[0]!));
-    candidates = direct.length ? direct : canonical.filter((row) => row.metadata);
+    const lab = modelNameKey(canonical[0]!.canonicalId!.split('/')[0]!);
+    const linked = candidates.filter((row) => row.canonicalId || row.metadata);
+    const direct = linked.filter((row) => modelNameKey(row.provider) === lab);
+    candidates = direct.length ? direct : linked.filter((row) => row.metadata);
   }
   if (!candidates.length || candidates.some((row) => !row.metadata)) return { status: 'excluded' };
   // Providers can impose different limits on the same model. Use their intersection,
   // never whichever record happened to appear first in a remote JSON object.
   const metadata = candidates.map((row) => row.metadata!);
-  const contextWindow = Math.min(...metadata.map((row) => row.contextWindow));
+  const contextWindow = metadata.reduce((limit, row) => Math.min(limit, row.contextWindow), Infinity);
   return {
     status: 'matched', kind: exact ? 'exact' : 'normalized', candidates,
     metadata: {
-      contextWindow, maxTokens: Math.min(contextWindow, ...metadata.map((row) => row.maxTokens)),
+      contextWindow, maxTokens: metadata.reduce((limit, row) => Math.min(limit, row.maxTokens), contextWindow),
       reasoning: metadata.every((row) => row.reasoning),
       input: metadata.every((row) => row.input.includes('image')) ? ['text', 'image'] : ['text'],
     },
