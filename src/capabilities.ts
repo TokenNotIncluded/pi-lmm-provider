@@ -2,7 +2,8 @@ import type { Api, Model } from '@earendil-works/pi-ai';
 import { getBuiltinModels, getBuiltinProviders, type BuiltinProvider } from '@earendil-works/pi-ai/providers/all';
 import type { CapabilityResolver, VerifiedCapabilities } from './catalog.ts';
 import { SUPPORTED_APIS, type LmmApi } from './protocol.ts';
-import { isExcludedModelMetadata, metadataProvenance, metadataProviders, resolveMetadataTransport, resolveModelMetadata, type ModelMetadata } from './models-dev.ts';
+import { bundledMetadata, isExcludedModelMetadata, resolveMetadataTransport, resolveModelMetadata, type MetadataSnapshot, type ModelMetadata } from './models-dev.ts';
+import { matchModelMetadata, type MetadataMatch } from './model-matching.ts';
 
 type Source = readonly [BuiltinProvider, ReadonlyMap<string, Model<Api>>];
 const LANGUAGE_APIS: readonly Api[] = [
@@ -10,9 +11,10 @@ const LANGUAGE_APIS: readonly Api[] = [
   'mistral-conversations', 'openai-codex-responses', 'openai-completions', 'openai-responses',
 ];
 
-const preferredSources: readonly Source[] = (
-  ['openai', 'anthropic', 'deepseek', 'xai', 'moonshotai', 'minimax', 'google', 'zai'] as const
-).map((provider) => [
+// Bundled vendor profiles define compatibility priority, not model admission.
+// Providers absent here are still discovered from the runtime public directory.
+const preferredSources: readonly Source[] = getBuiltinProviders()
+  .filter((provider) => Object.hasOwn(bundledMetadata.providers, provider)).map((provider) => [
   provider, new Map(getBuiltinModels(provider).map((model) => [model.id, model])),
 ]);
 const preferredProviders = new Set(preferredSources.map(([provider]) => provider));
@@ -51,14 +53,14 @@ export function applyModelMetadata(builtin: Model<Api>, metadata: ModelMetadata 
   };
 }
 
-function candidates(entry: Parameters<CapabilityResolver>[0], sources: readonly Source[]): VerifiedCapabilities[] {
+function candidates(entry: Parameters<CapabilityResolver>[0], sources: readonly Source[], data: MetadataSnapshot, matchedMetadata?: ModelMetadata): VerifiedCapabilities[] {
   const result: VerifiedCapabilities[] = [];
   for (const [provider, models] of sources) {
     const builtin = models.get(entry.upstream_model);
     if (!builtin) continue;
-    // Capacity corrections require BOTH a verified Pi transport profile and an
-    // exact models.dev vendor/ID match. Unknown aliases remain gated.
-    const metadata = resolveModelMetadata(provider, builtin.id);
+    // Existing Pi profiles retain their reviewed protocol controls; fresh public
+    // metadata updates their capacity without copying provider URLs or credentials.
+    const metadata = resolveModelMetadata(provider, builtin.id, data) ?? matchedMetadata;
     const model = applyModelMetadata(builtin, metadata);
     if (!model.input.includes('text')) continue;
     const nativeProtocol = SUPPORTED_APIS.includes(model.api as LmmApi) && entry.apis.includes(model.api as LmmApi);
@@ -81,54 +83,58 @@ function candidates(entry: Parameters<CapabilityResolver>[0], sources: readonly 
       api: nativeProtocol ? model.api as LmmApi : 'openai-completions', contextWindow: model.contextWindow, maxTokens: model.maxTokens,
       reasoning: model.reasoning, input: [...model.input], compat, referenceCost: structuredClone(model.cost),
       thinkingLevelMap: model.thinkingLevelMap ? structuredClone(model.thinkingLevelMap) : undefined,
-      provenance: `pi-ai vendor catalog: ${provider}/${model.id}${metadata ? `; ${metadataProvenance} capacities` : ''}${nativeProtocol ? '' : '; server-advertised OpenAI-compatible transport'}`,
+      provenance: `pi-ai vendor catalog: ${provider}/${model.id}${metadata ? `; models.dev (${data.fetchedAt}) capacities` : ''}${nativeProtocol ? '' : '; server-advertised OpenAI-compatible transport'}`,
     });
   }
   return result;
 }
 
-/** Independent exact metadata profile, with optional wire features deliberately disabled.
- * SDK source: vercel/ai 57cb73a3b171455ac07ee3ab13aa1280f06c5083,
- * packages/{openai,openai-compatible,anthropic}/src/*-provider.ts.
- * These adapters establish transport, not reasoning controls or vendor prices.
+/** New directory entries use LMM's advertised transport and a portable text profile.
+ * models.dev's reasoning flag alone does not describe a vendor's thinking controls.
  */
-function metadataCapabilities(entry: Parameters<CapabilityResolver>[0]): VerifiedCapabilities | undefined {
-  const matches = metadataProviders.flatMap((provider) => {
-    const metadata = resolveModelMetadata(provider, entry.upstream_model);
-    return metadata ? [{ provider, metadata, api: resolveMetadataTransport(provider, entry.upstream_model) }] : [];
-  });
-  // Even equal-looking capacities do not establish the identity of two vendors.
-  if (matches.length !== 1) return undefined;
-  const { provider, metadata, api } = matches[0]!;
-  if (!api || !entry.apis.includes(api)) return undefined;
+function metadataCapabilities(entry: Parameters<CapabilityResolver>[0], match: Extract<MetadataMatch, { status: 'matched' }>, data: MetadataSnapshot): VerifiedCapabilities | undefined {
+  const protocols = match.candidates.map(({ provider, id }) => resolveMetadataTransport(provider, id, data));
+  const api = entry.apis.find((candidate) => protocols.includes(candidate)) ??
+    (entry.apis.includes('openai-completions') ? 'openai-completions' : undefined);
+  if (!api) return undefined;
+  const { metadata } = match;
   return {
     api, contextWindow: metadata.contextWindow, maxTokens: metadata.maxTokens,
-    // Pi requires booleans and modalities. This is a restricted text profile;
-    // metadata booleans do not establish a reasoning wire format or image handling.
     reasoning: false, input: ['text'],
     compat: api === 'openai-completions' ? {
       supportsDeveloperRole: false, supportsStore: false, supportsReasoningEffort: false,
       supportsStrictMode: false, maxTokensField: 'max_tokens', sendSessionAffinityHeaders: true,
     } : {},
-    provenance: `${metadataProvenance}; exact SDK transport: ${provider}/${entry.upstream_model}; restricted text profile (reasoning and images disabled); LMM native cost required`,
+    provenance: `models.dev (${data.fetchedAt}); ${match.kind} model match; server-advertised ${api}; restricted text profile (reasoning and images disabled); LMM native cost required`,
   };
 }
 
-/** Exact vendor catalog matches only. LMM account pricing always comes from its server. */
-export const resolveKnownCapabilities: CapabilityResolver = (entry) => {
-  // models.dev explicitly rules out media/non-chat/unknown tool profiles. Do not
-  // let another catalog's exact ID, such as Azure/Vertex, bypass that decision.
-  if (preferredSources.some(([provider]) => isExcludedModelMetadata(provider, entry.upstream_model))) return undefined;
-  // Preserve the reviewed direct-vendor behavior. Only consult the rest of
-  // Pi's official catalog when none of those sources knows the exact ID.
-  const matches = candidates(entry, preferredSources);
+function builtinCapabilities(entry: Parameters<CapabilityResolver>[0], data: MetadataSnapshot, metadata?: ModelMetadata): VerifiedCapabilities | undefined {
+  const matches = candidates(entry, preferredSources, data, metadata);
   const knownPreferred = preferredSources.some(([, models]) => models.has(entry.upstream_model));
-  const resolved = knownPreferred ? matches : candidates(entry, fallbackSources);
+  const resolved = knownPreferred ? matches : candidates(entry, fallbackSources, data, metadata);
   const profile = ({ provenance: _source, referenceCost: _cost, ...rest }: VerifiedCapabilities) => JSON.stringify(rest);
   const first = resolved[0];
-  // Preferred direct profiles retain their reviewed behavior. An independent
-  // exact SDK profile can replace absent/conflicting proxy profiles, but cannot
-  // inherit any proxy's reasoning flags or its unrelated reference price.
-  if (first && resolved.every((candidate) => profile(candidate) === profile(first))) return first;
-  return metadataCapabilities(entry);
-};
+  return first && resolved.every((candidate) => profile(candidate) === profile(first)) ? first : undefined;
+}
+
+/** The server grants models; models.dev names supply metadata, never replacement wire IDs. */
+export function resolveKnownCapabilities(entry: Parameters<CapabilityResolver>[0], data = bundledMetadata): VerifiedCapabilities | undefined {
+  if (preferredSources.some(([provider]) => isExcludedModelMetadata(provider, entry.upstream_model, data))) return undefined;
+  const exact = builtinCapabilities(entry, data);
+  // A proxy's missing fields must not veto a reviewed direct Pi profile.
+  if (exact && preferredSources.some(([, models]) => models.has(entry.upstream_model))) return exact;
+  const match = matchModelMetadata(entry.upstream_model, data);
+  if (match && match.status !== 'matched') return undefined;
+  if (exact) return exact;
+  if (!match || match.status !== 'matched') return undefined;
+  // A normalized spelling can reuse the same model's installed Pi profile. A
+  // different version/size/variant cannot reach this path through fuzzy guessing.
+  for (const id of [...new Set(match.candidates.flatMap((candidate) =>
+    candidate.canonicalId ? [candidate.id, candidate.canonicalId.split('/').at(-1)!] : [candidate.id]))].sort()) {
+    if (id === entry.upstream_model) continue;
+    const known = builtinCapabilities({ ...entry, upstream_model: id }, data, match.metadata);
+    if (known) return { ...known, provenance: `${known.provenance}; models.dev ${match.kind} name match` };
+  }
+  return metadataCapabilities(entry, match, data);
+}

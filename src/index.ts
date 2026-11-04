@@ -19,6 +19,7 @@ export default function lmmExtension(pi: ExtensionAPI): void {
   const integration = new LmmIntegration({
     currencyPreference: currencySettings.get(),
     refreshJournalDirectory: join(getAgentDir(), 'lmm-refresh-journal'),
+    metadataCacheDirectory: join(getAgentDir(), 'lmm-models-dev'),
     onStatus(status) {
       latestStatus = status;
       if (context?.hasUI) context.ui.setStatus(PROVIDER_ID, status);
@@ -103,6 +104,7 @@ export default function lmmExtension(pi: ExtensionAPI): void {
   pi.registerCommand('lmm-prices', {
     description: 'Refresh LMM models and inspect account-specific prices.',
     async handler(filter, ctx) {
+      await integration.refreshMetadata(boundedSignal(ctx.signal));
       const result = await ctx.modelRegistry.refresh({
         providers: [PROVIDER_ID], allowNetwork: true, force: true, signal: boundedSignal(ctx.signal),
       });

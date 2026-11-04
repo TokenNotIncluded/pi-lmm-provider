@@ -2,7 +2,11 @@
 
 ## Catalog capabilities
 
-Model capability metadata is resolved from Pi's complete installed official provider model directory by exact upstream model ID and the API advertised by the LMM catalog. Reviewed direct-vendor entries take precedence; the remaining official entries are accepted only when every exact-ID match agrees. A bundled models.dev snapshot corrects exact vendor capacities and narrows supported inputs/reasoning; it cannot add an unverified Pi transport or reasoning control. Separate input limits conservatively cap Pi's single context limit. Explicit non-chat, mixed-media output, tool-less and incomplete profiles are excluded across alternate-provider fallbacks. No cross-model fallback is permitted. Unknown IDs remain unknown and are not admitted to `/model`; the resolver does not infer capabilities from names.
+Model capabilities are resolved from runtime models.dev data and installed Pi profiles. The public directory supplies all providers and model IDs without an allowlist. Exact IDs take precedence over normalized spelling, provider namespace, directory display-name and canonical-ID matches. Version, size and variant tokens are retained; incompatible canonical identities are not merged. The LMM catalog alone determines account availability and the original model ID sent in every request.
+
+Network-enabled discovery uses a 24-hour public metadata cache; `/lmm-prices` forces refresh. The five-second, size-bounded public request carries no account data. A failed or invalid refresh preserves the last valid metadata, with the bundled snapshot as a cold fallback. Network-disabled discovery makes no public metadata request. The durable public cache does not grant OAuth access or replace the separate account cache.
+
+Existing exact Pi profiles preserve their reviewed protocol controls. New metadata-only models can use supported, server-advertised transports with conservative text capabilities and complete LMM native pricing. Reasoning/image controls are not invented from a model name or boolean. Non-chat models and unresolved capability/pricing records remain visible in `/lmm-prices` with their admission reason. Canonical sources take precedence over incomplete proxy offerings; compatible linked offerings use conservative capacity limits. No cross-model request fallback is permitted.
 
 The last verified admitted models are cached for up to 24 hours using Pi's provider model store. The cache contains no bearer or refresh token, is bound to a hash of the issuer and OAuth session, is filtered against the current scopes, and is marked stale in status output. Live relay authorization remains server-side; a cached entry cannot bypass a removed group, model, or grant.
 
@@ -10,7 +14,7 @@ When the host exposes effective settings, a saved LMM default triggers startup d
 
 ## Non-static pricing
 
-Pi 0.85.1 native cost fields cannot represent unknown or arbitrary expression pricing, but Pi requires finite numeric cost fields for every selectable model. Complete server-supplied USD/million-token rates remain authoritative. A variable-billing model with an exact official Pi catalog match is selectable using that catalog's public cost solely as a local UI estimate and is labelled `LMM variable billing`; LMM settlement remains authoritative. Unknown IDs and entries without either server cost or an exact reference remain inspection-only. No protected pricing endpoint, zero/NaN/infinity placeholder, cross-model price, or client budget-confirmation gate is used.
+Pi 0.85.1 native cost fields cannot represent unknown or arbitrary expression pricing, but Pi requires finite numeric cost fields for every selectable model. Complete server-supplied USD/million-token rates remain authoritative. A variable-billing model with an exact official Pi catalog match is selectable using that catalog's public cost solely as a local UI estimate and is labelled `LMM variable billing`; LMM settlement remains authoritative. Entries without either complete server cost or a reference for the same verified model remain inspection-only, even if their capability metadata is known. No protected pricing endpoint, zero/NaN/infinity placeholder, cross-model price, or client budget-confirmation gate is used.
 
 ## Refresh rotation
 

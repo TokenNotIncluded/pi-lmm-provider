@@ -8,6 +8,7 @@ import {
   type Admission, type CapabilityResolver, type CatalogEntry, type Group, type Pricing,
 } from './catalog.ts';
 import { resolveKnownCapabilities } from './capabilities.ts';
+import { ModelMetadataCache } from './models-dev-cache.ts';
 import { LmmHttp, type HttpOptions } from './http.ts';
 import { LmmOAuth } from './oauth.ts';
 import {
@@ -86,6 +87,8 @@ interface Snapshot {
 export interface LmmProviderOptions extends HttpOptions {
   /** Test/review seam, not a new wire contract, flag, or production capability default. */
   capabilities?: CapabilityResolver;
+  /** Public metadata cache, separate from OAuth/session-bound account models. */
+  metadataCacheDirectory?: string;
   loginTimeoutMs?: number;
   refreshJournalDirectory?: string;
   onStatus?: (status: string | undefined) => void;
@@ -100,7 +103,8 @@ export class LmmIntegration {
   readonly http: LmmHttp;
   readonly oauth: LmmOAuth;
   readonly provider: Provider;
-  private readonly capabilities?: CapabilityResolver;
+  private readonly capabilities: CapabilityResolver;
+  private readonly metadata?: ModelMetadataCache;
   private readonly notify: (status: string | undefined) => void;
   private readonly shutdown = new AbortController();
   private current?: Snapshot;
@@ -121,7 +125,10 @@ export class LmmIntegration {
       options.clientId,
       options.hostName,
     );
-    this.capabilities = options.capabilities ?? resolveKnownCapabilities;
+    this.metadata = options.capabilities ? undefined : new ModelMetadataCache({
+      fetch: options.fetch, directory: options.metadataCacheDirectory,
+    });
+    this.capabilities = options.capabilities ?? ((entry) => resolveKnownCapabilities(entry, this.metadata!.snapshot));
     this.notify = options.onStatus ?? (() => {});
     this.currencyPreference = { ...(options.currencyPreference ?? { unit: 'credits' }) };
     const relay = createRelay(this.http, {
@@ -223,7 +230,11 @@ export class LmmIntegration {
     const parsed = parseCatalog(catalog, this.http.resource, value.scope);
     snapshot.catalogUpdatedAt = parsed.updated_at;
     snapshot.groups = parsed.groups;
-    if (scope.has('models:invoke')) snapshot.admissions = admitCatalog(parsed, this.http.issuer, this.capabilities);
+    if (scope.has('models:invoke')) {
+      await this.metadata?.refresh(signal);
+      signal.throwIfAborted();
+      snapshot.admissions = admitCatalog(parsed, this.http.issuer, this.capabilities);
+    }
     else snapshot.admissions = parsed.models.map((entry) => ({ entry, reason: 'models:invoke was not granted; read-only.' }));
     if (scope.has('balance:read')) {
       try { snapshot.balance = parseBalance(await this.http.bearer('/api/oauth2/balance', value.access, signal)); }
@@ -377,6 +388,11 @@ export class LmmIntegration {
     this.balancePending = { hash, task };
     try { await task; }
     finally { if (this.balancePending?.task === task) this.balancePending = undefined; }
+  }
+
+  /** Explicit refresh bypasses the public metadata TTL, without making a model call. */
+  async refreshMetadata(signal?: AbortSignal): Promise<void> {
+    await this.metadata?.refresh(signal, true);
   }
 
   prices(filter = ''): string {

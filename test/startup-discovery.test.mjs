@@ -7,13 +7,14 @@ import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager
 import { InMemoryCredentialStore, InMemoryModelsStore, fauxProvider } from '@earendil-works/pi-ai';
 import lmmExtension from '../src/index.ts';
 
-test('native cold startup discovers a missing saved LMM catalog without replacing the fallback selection', async () => {
+test('native startup discovers a saved LMM catalog, with explicit recovery on older hosts', async () => {
   for (const savedProvider of ['lmm', 'startup-fixture']) {
     const directory = await mkdtemp(join(tmpdir(), 'pi-lmm-startup-'));
     const previous = process.env.PI_CODING_AGENT_DIR;
     const originalFetch = globalThis.fetch;
     const requests = [];
     let session;
+    let hostSupportsSettings = false;
     process.env.PI_CODING_AGENT_DIR = directory;
     const issuer = 'https://api.lmm.best';
     const group = 'default';
@@ -23,6 +24,9 @@ test('native cold startup discovers a missing saved LMM catalog without replacin
     globalThis.fetch = async (input) => {
       const url = String(input);
       requests.push(url);
+      if (url === 'https://models.dev/api.json') return Response.json({ openai: { npm: '@ai-sdk/openai',
+        models: { 'gpt-4o': { id: 'gpt-4o', reasoning: false, tool_call: true,
+          limit: { context: 128000, output: 16384 }, modalities: { input: ['text', 'image'], output: ['text'] } } } } });
       if (url === `${issuer}/api/oauth2/catalog`) return Response.json({ schema_version: 1,
         resource: `${issuer}/api/oauth2`, updated_at: 1,
         groups: [{ id: groupId, name: group, scope: `group:${groupId}`, multiplier: 1 }],
@@ -59,7 +63,7 @@ test('native cold startup discovers a missing saved LMM catalog without replacin
         defaultModel: savedProvider === 'lmm' ? 'default / gpt-4o' : 'fallback' });
       const loader = new DefaultResourceLoader({ cwd: directory, agentDir: directory, settingsManager: settings,
         noExtensions: true, disabledBuiltinExtensions: ['mcp'], noSkills: true,
-        noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [lmmExtension] });
+        noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [(pi) => { hostSupportsSettings = typeof pi.getSettings === 'function'; lmmExtension(pi); }] });
       await loader.reload();
       const result = await createAgentSession({ cwd: directory, agentDir: directory, modelRuntime: runtime,
         settingsManager: settings, resourceLoader: loader, sessionManager: SessionManager.inMemory(directory), noTools: true });
@@ -75,8 +79,14 @@ test('native cold startup discovers a missing saved LMM catalog without replacin
       assert.equal(session.model?.provider, initialModel.provider, 'discovery does not override the current provider');
       assert.equal(session.model?.id, initialModel.id, 'discovery does not override the current model');
       if (savedProvider === 'lmm') {
+        if (!hostSupportsSettings) {
+          assert.deepEqual(requests, [], 'older hosts do not expose the saved default to extensions');
+          const refreshed = await runtime.refresh({ providers: ['lmm'], allowNetwork: true, force: true,
+            signal: new AbortController().signal });
+          assert.equal(refreshed.errors.size, 0, 'explicit discovery remains available on older hosts');
+        }
         assert.ok(runtime.getModel('lmm', 'default / gpt-4o'));
-        assert.deepEqual(requests.sort(), [`${issuer}/api/oauth2/balance`, `${issuer}/api/oauth2/catalog`].sort());
+        assert.deepEqual(requests.sort(), [`${issuer}/api/oauth2/balance`, `${issuer}/api/oauth2/catalog`, 'https://models.dev/api.json'].sort());
       } else {
         assert.deepEqual(requests, [], 'a non-LMM default stays independent of LMM model discovery');
       }

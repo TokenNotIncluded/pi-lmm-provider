@@ -5,13 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { metadataProviders } from '../src/models-dev.ts';
 
 test('offline metadata refresh records source digest, excludes non-chat and preserves old output on failure', () => {
   const directory = mkdtempSync(join(tmpdir(), 'pi-lmm-metadata-'));
   try {
     const output = join(directory, 'snapshot.json');
-    const fixture = Object.fromEntries(metadataProviders.map((provider) => [provider, { npm: '@ai-sdk/openai-compatible', models: {
+    const fixture = Object.fromEntries(['openai', 'brand-new-provider'].map((provider) => [provider, { npm: '@ai-sdk/openai-compatible', models: {
       verified: { id: 'verified', tool_call: true, reasoning: true,
         limit: { context: 1000, input: 800, output: 200 }, modalities: { input: ['text'], output: ['text'] },
         cost: { input: 999, output: 999 } },
@@ -30,6 +29,8 @@ test('offline metadata refresh records source digest, excludes non-chat and pres
     assert.ok(Number.isFinite(Date.parse(snapshot.fetchedAt)));
     assert.deepEqual(snapshot.providers.openai.verified, { contextWindow: 800, maxTokens: 200, reasoning: true, input: ['text'] });
     assert.deepEqual(snapshot.excluded.openai, ['media']);
+    assert.ok(snapshot.providers['brand-new-provider'].verified, 'new providers do not require a plugin release');
+    assert.equal(snapshot.providers.anthropic, undefined, 'an absent former provider is not an error');
     assert.deepEqual(snapshot.transports.openai, { verified: 'openai-completions' });
     fixture.openai.models.verified.provider = { npm: '@unreviewed/adapter' };
     assert.equal(refresh(JSON.stringify(fixture)).status, 0);

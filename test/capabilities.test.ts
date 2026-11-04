@@ -1,38 +1,51 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Model } from '@earendil-works/pi-ai';
+import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all';
+import { parseMetadataCatalog } from '../src/models-dev.ts';
 import { resolveKnownCapabilities } from '../src/capabilities.ts';
 import { admitCatalog, type Catalog, type CatalogEntry } from '../src/catalog.ts';
 
-test('exact SDK metadata fills missing and conflicting Pi profiles conservatively', () => {
-  for (const [id, api] of [
-    ['gpt-5.6', 'openai-responses'], ['deepseek-v4-flash', 'openai-completions'],
-    ['glm-5', 'openai-completions'], ['MiniMax-M2', 'anthropic-messages'],
+test('new SDK metadata fills absent Pi profiles conservatively', () => {
+  for (const [suffix, npm, api] of [
+    ['responses', '@ai-sdk/openai', 'openai-responses'],
+    ['chat', '@ai-sdk/openai-compatible', 'openai-completions'],
+    ['messages', '@ai-sdk/anthropic', 'anthropic-messages'],
   ] as const) {
-    const result = resolveKnownCapabilities(entry(id, [api]));
+    const id = `lmm-fixture-new-model-${suffix}`;
+    const data = parseMetadataCatalog({ futurevendor: { npm, models: { [id]: {
+      id, tool_call: true, reasoning: true, limit: { context: 128000, output: 16000 },
+      modalities: { input: ['text', 'image'], output: ['text'] },
+    } } } }, '2026-11-04T00:00:00Z', '0'.repeat(64));
+    const result = resolveKnownCapabilities(entry(id, [api]), data);
     assert.ok(result, id);
     assert.equal(result.api, api);
-    assert.ok(result.contextWindow > 0 && result.maxTokens > 0);
+    assert.equal(result.contextWindow, 128000);
+    assert.equal(result.maxTokens, 16000);
     assert.equal(result.reasoning, false);
     assert.deepEqual(result.input, ['text']);
     assert.equal(result.thinkingLevelMap, undefined);
-    assert.equal(result.referenceCost, undefined, 'another proxy price must not be selected');
+    assert.equal(result.referenceCost, undefined, 'another provider price must not be selected');
     assert.match(result.provenance, /restricted text profile/);
     assert.equal('allowedFallbackModels' in result.compat, false);
   }
 });
 
-test('SDK metadata still requires exact identity and its server-advertised protocol', () => {
+test('metadata keeps unknown variants and unadvertised protocols unavailable', () => {
   for (const [id, apis] of [
-    ['gpt-5.6', ['openai-completions']], ['MiniMax-M2', ['openai-responses']],
-    ['gemini-4-argon', ['openai-completions']], ['gpt-5.6-alias', ['openai-responses']],
-    ['GPT-5.6', ['openai-responses']], ['gpt-image-2', ['openai-responses']],
+    ['MiniMax-M2', ['openai-responses']], ['gpt-5.6-alias', ['openai-responses']],
+    ['gpt-image-2', ['openai-responses']],
   ] as const) assert.equal(resolveKnownCapabilities(entry(id, [...apis])), undefined, id);
 });
 
 test('metadata-only entries without a server cost remain read-only', () => {
-  const model = { ...entry('gpt-5.6', ['openai-responses']), native_cost: null };
-  const admissions = admitCatalog({ models: [model] } as Catalog, 'https://issuer.invalid', resolveKnownCapabilities);
+  const id = 'lmm-fixture-unpriced-new-model';
+  const data = parseMetadataCatalog({ futurevendor: { npm: '@ai-sdk/openai', models: { [id]: { id,
+    reasoning: false, tool_call: true, limit: { context: 128000, output: 16000 },
+    modalities: { input: ['text'], output: ['text'] },
+  } } } }, '2026-11-04T00:00:00Z', '0'.repeat(64));
+  const model = { ...entry(id, ['openai-responses']), native_cost: null };
+  const admissions = admitCatalog({ models: [model] } as Catalog, 'https://issuer.invalid', (entry) => resolveKnownCapabilities(entry, data));
   assert.equal(admissions[0]?.model, undefined);
   assert.match(admissions[0]?.reason ?? '', /No native or reference cost/);
 });
@@ -64,10 +77,10 @@ test('known input ceilings constrain selectable models without changing their ve
   assert.ok(result);
   assert.equal(result.contextWindow, 922000);
   assert.equal(result.maxTokens, 128000);
-  assert.equal(result.reasoning, true);
-  assert.equal(result.thinkingLevelMap?.max, 'max');
-  assert.equal(result.referenceCost?.input, 2);
-  assert.equal(result.referenceCost?.output, 10);
+  const builtin = getBuiltinModels('openai').find((model) => model.id === 'gpt-6.1-sol');
+  assert.equal(result.reasoning, builtin?.reasoning ?? false);
+  assert.deepEqual(result.thinkingLevelMap, builtin?.thinkingLevelMap);
+  assert.deepEqual(result.referenceCost, builtin?.cost);
 });
 test('native vendor fallbacks are removed from gateway capabilities', () => {
   const result = resolveKnownCapabilities(entry('claude-fable-5', ['anthropic-messages']));
@@ -168,5 +181,18 @@ test('LMM chat gateway supplies affinity across vendor models without enabling l
     assert.ok(result, id);
     assert.equal(Reflect.get(result.compat, 'sendSessionAffinityHeaders'), true, id);
     assert.notEqual(Reflect.get(result.compat, 'supportsLongCacheRetention'), true, id);
+  }
+});
+
+
+test('directory normalization and LMM gateway transport do not depend on a Pi model release', () => {
+  for (const [id, api] of [
+    ['GPT-5.6', 'openai-responses'], ['gpt-5.6', 'openai-completions'],
+    ['google/gemini-4-argon', 'openai-completions'], ['OPENAI/GPT_4O', 'openai-completions'],
+  ] as const) {
+    const result = resolveKnownCapabilities(entry(id, [api]));
+    assert.ok(result, id);
+    assert.equal(result.api, api);
+    assert.ok(result.contextWindow > 0 && result.maxTokens > 0);
   }
 });
