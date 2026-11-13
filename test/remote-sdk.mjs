@@ -32,7 +32,7 @@ try {
   const askRoot = process.env.PI_ASK_USER_PATH || dirname(require.resolve('pi-ask-user/package.json'));
   const vendor = join(temp, 'ask-user');
   await mkdir(vendor);
-  for (const name of ['index.ts', 'single-select-layout.ts', 'package.json']) await cp(join(askRoot, name), join(vendor, name));
+  await cp(askRoot, vendor, { recursive: true, filter: source => !source.slice(askRoot.length).split(/[\\/]/).includes('node_modules') });
   const credentials = new InMemoryCredentialStore();
   await credentials.modify('lmm', async () => ({ type: 'oauth', access: 'lmm_at_fixture', refresh: 'refresh_fixture', expires: Date.now() + 3600_000,
     lmm_issuer: fixture.origin, lmm_resource: `${fixture.origin}/api/oauth2`, lmm_session: 'sdk-owner', scope: INITIAL_SCOPES.join(' ') }));

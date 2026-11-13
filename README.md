@@ -4,11 +4,11 @@
 
 Use [LMM](https://api.lmm.best) models from Pi's native provider and model selector. Authentication runs through browser OAuth with a loopback callback and PKCE, so the extension never asks you to paste an API key into Pi.
 
-This is an alpha release last tested with Pi 0.86.1, 0.87.1, 0.99.2, 1.0.4 and 1.2.0. Newer releases are not blocked by a version ceiling. See [Preview status](#preview-status) before relying on it for production work.
+The current alpha source has been tested with Pi 0.86.1, 0.87.1, 0.99.2, 1.0.4, 1.2.0 and 1.5.2. Newer releases are not blocked by a version ceiling. See [Preview status](#preview-status) before relying on it for production work.
 
 ## Requirements
 
-- Pi 0.86.1 or newer; current local maintenance checks use Pi 1.2.0
+- Pi 0.86.1 or newer; current local maintenance checks use Pi 1.5.2
 - Node.js 22.19.0 or newer
 - An LMM account
 
@@ -225,4 +225,4 @@ Incoming commands run independently of outgoing model/tool/UI reports. Publishin
 
 The exact event contract and local safety limits are in [docs/remote-event-stream.md](docs/remote-event-stream.md).
 
-Tests: `npm test`, `npm run typecheck`, `npm run test:pi`. The last is an explicit aggregate: native Pi package loading (including `/lmm-currency`), encrypted-image SDK tests and the published ask_user integration. `npm ci --ignore-scripts` installs the pinned `pi-ask-user@0.16.0` development dependency; `PI_ASK_USER_PATH` can point to an existing copy of that exact version instead. The aggregate itself does not fetch dependencies. `PI_BIN` selects the installed CLI. The checked-in Pi SDK dependencies and the locally verified CLI are 1.2.0. These checks use Pi's deterministic non-LMM test provider, a local encrypted SSE relay and fixture credentials; no production account or paid model request is used. `npm run test:remote` remains the individual ask_user check. Live Pro-group model requests require separate acceptance with a valid OAuth login; an expired credential protected by the refresh journal requires `/login`, not deleting the journal to replay it.
+Tests: `npm test`, `npm run typecheck`, `npm run test:pi`. The last is an explicit aggregate: native Pi package loading (including `/lmm-currency`), encrypted-image SDK tests and the published ask_user integration. `npm ci --ignore-scripts` installs the pinned `pi-ask-user@0.17.2` development dependency; `PI_ASK_USER_PATH` can point to an existing copy of that exact version instead. The aggregate itself does not fetch dependencies. `PI_BIN` selects the installed CLI. The checked-in Pi SDK dependencies and the locally verified CLI are 1.5.2. These checks use Pi's deterministic non-LMM test provider, a local encrypted SSE relay and fixture credentials; no production account or paid model request is used. `npm run test:remote` remains the individual ask_user check. Live Pro-group model requests require separate acceptance with a valid OAuth login; an expired credential protected by the refresh journal requires `/login`, not deleting the journal to replay it.

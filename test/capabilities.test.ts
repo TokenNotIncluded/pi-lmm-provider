@@ -6,7 +6,7 @@ import { admitCatalog, type Catalog, type CatalogEntry } from '../src/catalog.ts
 
 test('exact SDK metadata fills missing and conflicting Pi profiles conservatively', () => {
   for (const [id, api] of [
-    ['gpt-5.6', 'openai-responses'], ['deepseek-v4-flash', 'openai-completions'],
+    ['gpt-5.6', 'openai-responses'],
     ['glm-5', 'openai-completions'], ['MiniMax-M2', 'anthropic-messages'],
   ] as const) {
     const result = resolveKnownCapabilities(entry(id, [api]));
@@ -25,9 +25,22 @@ test('exact SDK metadata fills missing and conflicting Pi profiles conservativel
 test('SDK metadata still requires exact identity and its server-advertised protocol', () => {
   for (const [id, apis] of [
     ['gpt-5.6', ['openai-completions']], ['MiniMax-M2', ['openai-responses']],
-    ['gemini-4-argon', ['openai-completions']], ['gpt-5.6-alias', ['openai-responses']],
+    ['gemini-4-argon-unverified-alias', ['openai-completions']], ['gpt-5.6-alias', ['openai-responses']],
     ['GPT-5.6', ['openai-responses']], ['gpt-image-2', ['openai-responses']],
   ] as const) assert.equal(resolveKnownCapabilities(entry(id, [...apis])), undefined, id);
+});
+
+test('new SDK catalog entries still require exact IDs and advertised gateway transport', () => {
+  for (const id of ['deepseek-v4-flash', 'gemini-4-argon']) {
+    const result = resolveKnownCapabilities(entry(id, ['openai-completions']));
+    assert.ok(result, id);
+    assert.equal(result.api, 'openai-completions');
+    assert.ok(result.contextWindow > 0 && result.maxTokens > 0);
+    assert.match(result.provenance, /pi-ai vendor catalog:/);
+    assert.equal(resolveKnownCapabilities(entry(`${id}-unverified-alias`, ['openai-completions'])), undefined);
+    assert.equal(resolveKnownCapabilities(entry(id, ['openai-responses'])), undefined);
+    assert.equal('allowedFallbackModels' in (result.compat ?? {}), false);
+  }
 });
 
 test('metadata-only entries without a server cost remain read-only', () => {
