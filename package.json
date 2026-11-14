@@ -38,7 +38,7 @@
     "src/models-dev.json",
     "src/models-dev.LICENSE",
     "scripts/install.mjs",
-    "README.md",
+    "README.md", "DYNAMIC_CATALOG.md",
     "CONTRACT_GAPS.md",
     "LICENSE"
   ],

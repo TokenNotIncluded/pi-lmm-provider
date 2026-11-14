@@ -1,5 +1,7 @@
 # LMM provider for Pi
 
+Current server metadata behavior: [Dynamic OAuth catalog](DYNAMIC_CATALOG.md). Server metadata takes precedence over the legacy snapshot behavior described below.
+
 <img src="https://raw.githubusercontent.com/TokenNotIncluded/pi-lmm-provider/main/assets/icon.svg" alt="LMM for Pi" width="96" height="96" />
 
 Use [LMM](https://api.lmm.best) models from Pi's native provider and model selector. Authentication runs through browser OAuth with a loopback callback and PKCE, so the extension never asks you to paste an API key into Pi.

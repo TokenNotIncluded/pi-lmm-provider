@@ -1,3 +1,4 @@
+import { parseMetadata, type ServerMetadata } from './server-metadata.ts';
 import type { Model, ModelCost } from '@earendil-works/pi-ai';
 import {
   PROVIDER_ID, SUPPORTED_APIS, base64url, canonicalId, nullableNumber, object, nonnegative,
@@ -13,7 +14,7 @@ export interface Pricing {
 }
 export interface CatalogEntry {
   id: string; group_id: string; group: string; upstream_model: string; name: string;
-  apis: LmmApi[]; pricing: Pricing; native_cost: ModelCost | null;
+  metadata?: ServerMetadata; apis: LmmApi[]; pricing: Pricing; native_cost: ModelCost | null;
 }
 export interface Catalog { schema_version: 1; resource: string; updated_at: number; groups: Group[]; models: CatalogEntry[] }
 
@@ -46,7 +47,7 @@ function nativeCost(value: unknown, pricing: Pricing): ModelCost | null {
     cacheRead: nonnegative(row.cacheRead), cacheWrite: nonnegative(row.cacheWrite),
   };
   requireValue(pricing.currency === 'USD' && pricing.unit === 'million_tokens' &&
-    (pricing.price_basis === 'configured_base_rates' || pricing.price_basis === 'dynamic_estimate') && pricing.request === null,
+    (pricing.price_basis === 'configured_base_rates' || pricing.price_basis === 'dynamic_estimate' || pricing.price_basis === 'effective_user_rates') && pricing.request === null,
     'LMM advertised a native cost for incompatible billing.');
   requireValue(cost.input === pricing.input && cost.output === pricing.output && cost.cacheRead === pricing.cache_read && cost.cacheWrite === pricing.cache_write,
     'LMM native cost differs from its already-adjusted server rates.');
@@ -68,7 +69,7 @@ function parseEntry(value: unknown, groups: ReadonlyMap<string, Group>): Catalog
   }
   requireValue(new Set(apis).size === apis.length);
   const pricing = parsePricing(row.pricing);
-  return { id, group_id, group, upstream_model, name: text(row.name), apis, pricing, native_cost: nativeCost(row.native_cost, pricing) };
+  return { id, group_id, group, upstream_model, name: text(row.name), metadata: parseMetadata(row.metadata), apis, pricing, native_cost: nativeCost(row.native_cost, pricing) };
 }
 
 export function parseCatalog(value: unknown, resource: string, grantedScope: string): Catalog {
@@ -84,7 +85,7 @@ export function parseCatalog(value: unknown, resource: string, grantedScope: str
   return { schema_version: 1, resource, updated_at: unixSeconds(body.updated_at), groups, models };
 }
 
-/** Deliberately not inferred from names. The v1 wire contract does not yet provide this. */
+/** Host capabilities derived from server metadata and supported transports. */
 export interface VerifiedCapabilities {
   api: LmmApi;
   contextWindow: number;

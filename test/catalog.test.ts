@@ -1,3 +1,4 @@
+import { resolveKnownCapabilities } from '../src/capabilities.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { admitCatalog, nativeModelId, parseCatalog, priceReport } from '../src/catalog.ts';
@@ -110,4 +111,23 @@ test('accepts a dynamic estimate as native cost while retaining its estimate bas
   const result = parseCatalog({ ...catalog, models: [{ ...model, pricing: { ...pricing, price_basis: 'dynamic_estimate' } }] }, catalog.resource, 'group:ZGVmYXVsdA');
   assert.equal(result.models[0]!.pricing.price_basis, 'dynamic_estimate');
   assert.equal(result.models[0]!.native_cost?.input, 1);
+});
+
+const serverMetadata = {context_window: 128000, max_input_tokens: 100000, max_output_tokens: 16000,
+  input_modalities: ['text'], output_modalities: ['text'], reasoning: true, tool_call: true, source: 'server'};
+test('server metadata admits new IDs, refreshes limits/prices, removes models without a plugin release', () => {
+  const read = (models: unknown[]) => admitCatalog(parseCatalog({...catalog, models}, catalog.resource, group.scope), 'https://lmm.test', resolveKnownCapabilities);
+  const row = {...model, metadata: serverMetadata, pricing: {...pricing, price_basis: 'effective_user_rates'}};
+  const [first] = read([row]);
+  assert.equal(first!.model!.contextWindow, 100000);
+  assert.equal(first!.model!.cost.input, 1); // already adjusted; do not multiply again
+  assert.equal(first!.entry.upstream_model, 'gpt-test');
+  const [next] = read([{...row, metadata: {...serverMetadata, context_window: 64000},
+    pricing: {...row.pricing, input: 3}, native_cost: {...row.native_cost, input: 3}}]);
+  assert.equal(next!.model!.contextWindow, 64000);
+  assert.equal(next!.model!.cost.input, 3);
+  assert.deepEqual(read([]), []);
+  assert.equal(read([{...row, metadata: {...serverMetadata, context_window: null, max_input_tokens: null}}])[0]!.model, undefined);
+  assert.equal(read([{...row, native_cost: null}])[0]!.model, undefined);
+  assert.throws(() => read([{...row, metadata: {...serverMetadata, max_output_tokens: -1}}]));
 });

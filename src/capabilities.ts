@@ -1,3 +1,4 @@
+import { contextBudget, textOutput } from './server-metadata.ts';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import { getBuiltinModels, getBuiltinProviders, type BuiltinProvider } from '@earendil-works/pi-ai/providers/all';
 import type { CapabilityResolver, VerifiedCapabilities } from './catalog.ts';
@@ -114,8 +115,19 @@ function metadataCapabilities(entry: Parameters<CapabilityResolver>[0]): Verifie
   };
 }
 
-/** Exact vendor catalog matches only. LMM account pricing always comes from its server. */
+/** Server metadata is authoritative; old servers retain exact-profile compatibility. */
 export const resolveKnownCapabilities: CapabilityResolver = (entry) => {
+  if (entry.metadata !== undefined) {
+    const m = entry.metadata;
+    const contextWindow = contextBudget(m);
+    const api = entry.apis.find(api => SUPPORTED_APIS.includes(api));
+    if (!api || !contextWindow || !m.max_output_tokens || !textOutput(m) || m.tool_call !== true) return undefined;
+    return {api, contextWindow, maxTokens: Math.min(m.max_output_tokens, contextWindow),
+      reasoning: false, input: ['text'],
+      compat: api === 'openai-completions' ? {supportsDeveloperRole: false, supportsStore: false,
+        supportsReasoningEffort: false, supportsStrictMode: false, maxTokensField: 'max_tokens', sendSessionAffinityHeaders: true} : {},
+      provenance: `LMM server: ${m.source}; conservative text transport`};
+  }
   // models.dev explicitly rules out media/non-chat/unknown tool profiles. Do not
   // let another catalog's exact ID, such as Azure/Vertex, bypass that decision.
   if (preferredSources.some(([provider]) => isExcludedModelMetadata(provider, entry.upstream_model))) return undefined;
