@@ -116,3 +116,18 @@ test('HTTP rejects a response when cancellation races the final successful read'
   await assert.rejects(http.request('/fixture', { signal: abort.signal }), (error: unknown) =>
     error instanceof Error && 'code' in error && error.code === 'aborted');
 });
+
+
+test('large catalogs have a bounded 32 MiB budget without widening balance or OAuth responses', async () => {
+  const data = { padding: 'x'.repeat(2_100_000), models: [] };
+  const http = new LmmHttp({ fetch: async () => Response.json(data) });
+  assert.equal((await http.bearer('/api/oauth2/catalog', 'fixture')).padding, data.padding);
+  await assert.rejects(http.bearer('/api/oauth2/balance', 'fixture'), /size limit/);
+});
+
+test('custom issuers accept HTTPS origins and reject insecure URLs, paths and embedded credentials', () => {
+  assert.equal(new LmmHttp({ issuer: 'https://fixture.invalid:8443' }).issuer, 'https://fixture.invalid:8443');
+  for (const issuer of ['http://127.0.0.1:7777', 'https://fixture.invalid/path', 'https://user:secret@fixture.invalid', 'https://fixture.invalid?query=1']) {
+    assert.throws(() => new LmmHttp({ issuer }));
+  }
+});

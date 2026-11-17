@@ -96,6 +96,8 @@ export interface VerifiedCapabilities {
   compat: NonNullable<Model<LmmApi>['compat']>;
   /** Public Pi catalog rates used only when LMM cannot express variable billing in ModelCost. */
   referenceCost?: ModelCost;
+  /** Numeric host placeholders are disclosed separately from server billing. */
+  unknownCostFields?: string[];
   thinkingLevelMap?: Model<LmmApi>['thinkingLevelMap'];
   provenance: string;
 }
@@ -120,7 +122,7 @@ export function admitCatalog(catalog: Catalog, issuer: string, resolve: Capabili
     text(capabilities.provenance);
     const multiplier = entry.pricing.group_multiplier === null ? 'unknown' : `${entry.pricing.group_multiplier}×`;
     const estimate = entry.pricing.price_basis === 'dynamic_estimate' ? ' · estimate' : '';
-    const variable = entry.native_cost ? '' : ' · LMM variable billing';
+    const variable = entry.native_cost ? '' : capabilities.unknownCostFields?.length ? ' · cost estimate incomplete (server billed)' : ' · reference estimate (server billed)';
     const model: Model<LmmApi> = {
       id: nativeModelId(entry), name: `${entry.group} / ${entry.upstream_model} · group ${multiplier}${estimate}${variable}`,
       provider: PROVIDER_ID, api: capabilities.api,
@@ -155,7 +157,7 @@ export function priceReport(admissions: readonly Admission[], filter = '', group
       : p.unit === 'request'
         ? `  request ${amount(p.request)}; token rates are not provided.`
         : `  input ${amount(p.input)}, output ${amount(p.output)}, cache read ${amount(p.cache_read)}, cache write ${amount(p.cache_write)}, request ${amount(p.request)}`;
-    const selection = model ? `Select using native /model.${entry.native_cost ? '' : p.price_basis === 'cached_model_rates' ? ' Pi cost retains a cached model estimate; server rates are unknown.' : ' Pi cost uses vendor reference rates, not an LMM quote.'}`
+    const selection = model ? `Select using native /model.${entry.native_cost ? '' : p.price_basis === 'cached_model_rates' ? ' Pi cost retains a cached model estimate; server rates are unknown.' : ' Host cost is an estimate; settlement uses server rates.'}`
       : reason ?? 'Read-only; not registered in /model.';
     return [
       `${entry.group} / ${entry.upstream_model}`,

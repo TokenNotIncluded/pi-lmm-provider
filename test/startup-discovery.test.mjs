@@ -11,18 +11,27 @@ test('native cold startup discovers a missing saved LMM catalog without replacin
   for (const savedProvider of ['lmm', 'startup-fixture']) {
     const directory = await mkdtemp(join(tmpdir(), 'pi-lmm-startup-'));
     const previous = process.env.PI_CODING_AGENT_DIR;
+    const previousIssuer = process.env.LMM_ISSUER;
+    const previousMetadataCache = process.env.LMM_MODELS_DEV_CACHE;
     const originalFetch = globalThis.fetch;
     const requests = [];
     let session;
     process.env.PI_CODING_AGENT_DIR = directory;
-    const issuer = 'https://api.lmm.best';
+    const issuer = 'https://startup.lmm.test';
+    process.env.LMM_ISSUER = issuer;
+    process.env.LMM_MODELS_DEV_CACHE = join(directory, 'public-models.json');
     const group = 'default';
     const groupId = Buffer.from(group).toString('base64url');
     const wireId = `lmm:${groupId}:${Buffer.from('gpt-4o').toString('base64url')}`;
     const cost = { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 };
-    globalThis.fetch = async (input) => {
+    globalThis.fetch = async (input, options) => {
       const url = String(input);
       requests.push(url);
+      if (url === 'https://models.dev/api.json?type=all') {
+        assert.equal(options?.headers?.authorization, undefined);
+        return Response.json({ fixture: { models: { fixture: { id: 'fixture', reasoning: false, tool_call: false,
+          limit: { context: 4096, output: 1024 }, modalities: { input: ['text'], output: ['text'] } } } } });
+      }
       if (url === `${issuer}/api/oauth2/catalog`) return Response.json({ schema_version: 1,
         resource: `${issuer}/api/oauth2`, updated_at: 1,
         groups: [{ id: groupId, name: group, scope: `group:${groupId}`, multiplier: 1 }],
@@ -76,7 +85,7 @@ test('native cold startup discovers a missing saved LMM catalog without replacin
       assert.equal(session.model?.id, initialModel.id, 'discovery does not override the current model');
       if (savedProvider === 'lmm') {
         assert.ok(runtime.getModel('lmm', 'default / gpt-4o'));
-        assert.deepEqual(requests.sort(), [`${issuer}/api/oauth2/balance`, `${issuer}/api/oauth2/catalog`].sort());
+        assert.deepEqual(requests.sort(), [`${issuer}/api/oauth2/balance`, `${issuer}/api/oauth2/catalog`, 'https://models.dev/api.json?type=all'].sort());
       } else {
         assert.deepEqual(requests, [], 'a non-LMM default stays independent of LMM model discovery');
       }
@@ -84,6 +93,8 @@ test('native cold startup discovers a missing saved LMM catalog without replacin
     } finally {
       session?.dispose();
       globalThis.fetch = originalFetch;
+      if (previousIssuer === undefined) delete process.env.LMM_ISSUER; else process.env.LMM_ISSUER = previousIssuer;
+      if (previousMetadataCache === undefined) delete process.env.LMM_MODELS_DEV_CACHE; else process.env.LMM_MODELS_DEV_CACHE = previousMetadataCache;
       if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
       else process.env.PI_CODING_AGENT_DIR = previous;
       await rm(directory, { recursive: true, force: true });

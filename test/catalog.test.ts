@@ -49,7 +49,7 @@ test('admits variable-billing models with a clearly labelled Pi reference cost',
     referenceCost: { input: 2, output: 8, cacheRead: 0.2, cacheWrite: 0, tiers: [{ inputTokensAbove: 100000, input: 4, output: 12, cacheRead: 0.4, cacheWrite: 0 }] }, provenance: 'fixture',
   }));
   assert.ok(admission?.model);
-  assert.match(admission.model.name, /LMM variable billing/);
+  assert.match(admission.model.name, /reference estimate \(server billed\)/);
   assert.equal(admission.model.cost.input, 2);
   assert.equal(admission.model.cost.tiers?.[0]?.output, 12);
 });
@@ -64,7 +64,7 @@ test('price report distinguishes expression billing and Pi reference costs from 
   const report = priceReport(admitted);
   assert.match(report, /1 selectable chat models, 0 read-only entries/);
   assert.match(report, /Server expression billing; fixed per-token rates are not provided/);
-  assert.match(report, /vendor reference rates, not an LMM quote/);
+  assert.match(report, /Host cost is an estimate; settlement uses server rates/);
   assert.ok(!report.includes('input unknown, output unknown'));
   assert.match(report, /Unknown is not free/);
   assert.equal(admitted[0]!.model!.cost.output, 2, 'display formatting does not modify native costs');
@@ -127,7 +127,7 @@ test('server metadata admits new IDs, refreshes limits/prices, removes models wi
   assert.equal(next!.model!.contextWindow, 64000);
   assert.equal(next!.model!.cost.input, 3);
   assert.deepEqual(read([]), []);
-  assert.equal(read([{...row, metadata: {...serverMetadata, context_window: null, max_input_tokens: null}}])[0]!.model, undefined);
-  assert.equal(read([{...row, native_cost: null}])[0]!.model, undefined);
+  assert.equal(read([{...row, metadata: {...serverMetadata, context_window: null, max_input_tokens: null}}])[0]!.model?.contextWindow, 32768);
+  assert.equal(read([{...row, native_cost: null}])[0]!.model?.cost.input, 1);
   assert.throws(() => read([{...row, metadata: {...serverMetadata, max_output_tokens: -1}}]));
 });

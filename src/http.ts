@@ -182,6 +182,6 @@ export class LmmHttp {
     return this.request(path, {
       headers: { authorization: `Bearer ${access}` },
       signal,
-    });
+    }, path === '/api/oauth2/catalog' ? 32 * 1024 * 1024 : 2_000_000);
   }
 }

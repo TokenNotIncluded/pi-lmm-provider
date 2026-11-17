@@ -8,6 +8,7 @@ import {
   type Admission, type CapabilityResolver, type CatalogEntry, type Group, type Pricing,
 } from './catalog.ts';
 import { resolveKnownCapabilities } from './capabilities.ts';
+import { loadModelsDev } from './models-dev-cache.ts';
 import { LmmHttp, type HttpOptions } from './http.ts';
 import { LmmOAuth } from './oauth.ts';
 import {
@@ -144,9 +145,9 @@ export class LmmIntegration {
               if (epoch === this.epoch) this.pendingLogin = snapshot;
             } catch {
               // Retain a valid login even if read-only discovery is temporarily unavailable.
-              interaction.notify({ type: 'progress', message: 'LMM login succeeded, but its catalog or balance is unavailable. Use /lmm-prices to retry discovery; unknown models are not registered.' });
+              interaction.notify({ type: 'progress', message: 'LMM login succeeded, but its catalog or balance is unavailable. Use /lmm-prices to retry discovery; discovery will retain all authorized models when it succeeds.' });
             }
-            interaction.notify({ type: 'progress', message: `LMM uses ${options.hostName ?? 'Pi'}'s native model selector. Entries without verified capabilities or truthful native pricing remain read-only. Automatic refresh is fenced by a durable local journal; signing out is local only.` });
+            interaction.notify({ type: 'progress', message: `LMM uses ${options.hostName ?? 'Pi'}'s native model selector. Model metadata refreshes automatically; incomplete cost estimates are labelled and server billing remains authoritative. Automatic refresh is fenced by a durable local journal; signing out is local only.` });
             return issued;
           },
           refresh: async (value, signal) => this.oauth.refresh(value, AbortSignal.any([signal, this.shutdown.signal])),
@@ -219,7 +220,7 @@ export class LmmIntegration {
       session: value.lmm_session, accessHash: fingerprint(value.access), expires: value.expires,
       admissions: [], groups: [], catalogUpdatedAt: 0, checkedAt: Date.now(), catalogStale: false, balanceStale: false,
     };
-    const catalog = await this.http.bearer('/api/oauth2/catalog', value.access, signal);
+    const [catalog] = await Promise.all([this.http.bearer('/api/oauth2/catalog', value.access, signal), loadModelsDev()]);
     const parsed = parseCatalog(catalog, this.http.resource, value.scope);
     snapshot.catalogUpdatedAt = parsed.updated_at;
     snapshot.groups = parsed.groups;

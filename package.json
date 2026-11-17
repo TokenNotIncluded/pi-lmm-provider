@@ -1,7 +1,7 @@
 {
   "name": "@tokennotincluded/pi-lmm-provider",
-  "version": "0.1.0-alpha.5",
-  "description": "LMM OAuth provider for Pi's native model selector (integration-gated preview)",
+  "version": "0.1.0-alpha.6",
+  "description": "LMM OAuth provider with automatic models.dev metadata for Pi's native model selector",
   "type": "module",
   "license": "AGPL-3.0-only",
   "author": "TokenNotIncluded",
@@ -35,12 +35,13 @@
   "files": [
     "assets",
     "src/*.ts",
-    "src/models-dev.json",
     "src/models-dev.LICENSE",
     "scripts/install.mjs",
-    "README.md", "DYNAMIC_CATALOG.md",
+    "README.md",
+    "DYNAMIC_CATALOG.md",
     "CONTRACT_GAPS.md",
-    "LICENSE"
+    "LICENSE",
+    "scripts/update-model-metadata.mjs"
   ],
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=0.86.1",

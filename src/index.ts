@@ -17,6 +17,7 @@ export default function lmmExtension(pi: ExtensionAPI): void {
   let latestDiagnostics: RelayDiagnostics | undefined;
   const currencySettings = new CurrencySettings(join(getAgentDir(), 'lmm-currency.json'));
   const integration = new LmmIntegration({
+    issuer: process.env.LMM_ISSUER || undefined,
     currencyPreference: currencySettings.get(),
     refreshJournalDirectory: join(getAgentDir(), 'lmm-refresh-journal'),
     onStatus(status) {
