@@ -101,7 +101,7 @@ def artifact(source, directory):
     if not isinstance(package_row, dict) or package_row.get("name") != PACKAGE or package_row.get("version") != version:
         raise ValueError("Tagged npm file listing has a different package identity.")
     expected = {item["path"] for item in package_row["files"]}
-    required = {"package.json", "src/index.ts", "src/models-dev.json", "src/models-dev.LICENSE", "LICENSE"}
+    required = {"package.json", "src/index.ts", "src/models-dev-cache.ts", "src/models-dev.LICENSE", "LICENSE"}
     if not required <= expected or len(expected) > 2048:
         raise ValueError("Tagged package listing lacks required runtime/metadata/license files.")
     seen = set()
