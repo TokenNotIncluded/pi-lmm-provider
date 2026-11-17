@@ -1,7 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { join } from 'node:path';
-import { registerRemoteControl } from './remote-control.ts';
 import { LmmIntegration } from './provider.ts';
 import { CurrencySettings, CURRENCY_USAGE, currencySummary } from './currency.ts';
 import { cacheAdvice } from './cache.ts';
@@ -26,7 +25,6 @@ export default function lmmExtension(pi: ExtensionAPI): void {
     },
   });
   pi.registerProvider(integration.provider);
-  registerRemoteControl(pi, integration, join(getAgentDir(), 'lmm-remote.json'));
   registerToolGuidance(pi);
   registerToolGuard(pi);
 

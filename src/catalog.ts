@@ -8,7 +8,7 @@ import {
 export interface Group { id: string; name: string; scope: string; multiplier: number | null }
 export interface Pricing {
   currency: string; unit: string; price_basis: string;
-  group_multiplier: number | null; trust_multiplier: number | null;
+  group_multiplier: number | null;
   input: number | null; output: number | null; cache_read: number | null; cache_write: number | null; request: number | null;
   final_cost_depends_on_usage: boolean; updated_at: number;
 }
@@ -31,7 +31,7 @@ function parsePricing(value: unknown): Pricing {
   requireValue(typeof row.final_cost_depends_on_usage === 'boolean');
   return {
     currency: text(row.currency, 16), unit: text(row.unit, 64), price_basis: text(row.price_basis, 64),
-    group_multiplier: nullableNumber(row.group_multiplier), trust_multiplier: nullableNumber(row.trust_multiplier),
+    group_multiplier: nullableNumber(row.group_multiplier),
     input: nullableNumber(row.input), output: nullableNumber(row.output), cache_read: nullableNumber(row.cache_read),
     cache_write: nullableNumber(row.cache_write), request: nullableNumber(row.request),
     final_cost_depends_on_usage: row.final_cost_depends_on_usage, updated_at: unixSeconds(row.updated_at),
@@ -161,7 +161,7 @@ export function priceReport(admissions: readonly Admission[], filter = '', group
       : reason ?? 'Read-only; not registered in /model.';
     return [
       `${entry.group} / ${entry.upstream_model}`,
-      `  ${p.currency}/${p.unit}; ${p.price_basis}; group ×${amount(p.group_multiplier)}, trust ×${amount(p.trust_multiplier)} (already included)`,
+      `  ${p.currency}/${p.unit}; ${p.price_basis}; group ×${amount(p.group_multiplier)} (already included)`,
       rates,
       `  ${selection} Snapshot ${new Date(p.updated_at * 1000).toISOString()}.`,
     ].join('\n');

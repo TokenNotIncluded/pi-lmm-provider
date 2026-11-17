@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Api, Credential, Model, ModelsStoreEntry, Provider, RefreshModelsContext } from '@earendil-works/pi-ai';
 import { balanceStatus, parseBalance, type Balance } from './balance.ts';
 import { type CurrencyPreference } from './currency.ts';
@@ -59,8 +58,7 @@ function cachedEntry(model: unknown, updatedAt: number): CatalogEntry | undefine
       // Pi persists numeric model estimates, not the server billing contract.
       // Keep those estimates for host continuity without inventing a server quote.
       currency: 'unknown', unit: 'unknown', price_basis: 'cached_model_rates',
-      group_multiplier: null, trust_multiplier: null,
-      input: null, output: null, cache_read: null, cache_write: null,
+      group_multiplier: null, input: null, output: null, cache_read: null, cache_write: null,
       request: null, final_cost_depends_on_usage: true, updated_at: updatedAt,
     };
     const group_id = base64url(group);
@@ -111,7 +109,6 @@ export class LmmIntegration {
   private balancePending?: { hash: string; task: Promise<void> };
   private authSnapshotPending?: { hash: string; task: Promise<void> };
   private epoch = 0;
-  private readonly remoteAuthContext = new AsyncLocalStorage<{ session?: string }>();
 
   constructor(options: LmmProviderOptions = {}) {
     this.http = new LmmHttp(options);
@@ -154,11 +151,7 @@ export class LmmIntegration {
           toAuth: async (value) => {
             const current = credential(value, this.http.issuer);
             if (this.revoked.has(current.lmm_session)) throw new LmmError('revoked', 'This LMM grant was revoked. Use /logout and then /login.');
-            const remote = this.remoteAuthContext.getStore();
-            if (remote) {
-              if (!current.scope.split(' ').includes('remote:control')) throw new LmmError('unauthorized', 'Remote control needs new consent. Use /login lmm.');
-              remote.session = current.lmm_session;
-            } else await this.refreshSnapshotForAuth(current);
+            await this.refreshSnapshotForAuth(current);
             // No API-key field: especially important for the Anthropic SDK adapter.
             return { headers: { authorization: `Bearer ${current.access}` }, baseUrl: this.http.issuer };
           },
@@ -174,16 +167,6 @@ export class LmmIntegration {
       stream: relay.stream,
       streamSimple: relay.streamSimple,
     };
-  }
-
-  /** Resolve through Pi's credential store/refresh, without model discovery.
-   * Async context keeps simultaneous model calls on their normal validation path.
-   */
-  async resolveRemoteAuth<T>(resolve: () => Promise<T>): Promise<{ value: T; session: string }> {
-    const state: { session?: string } = {};
-    const value = await this.remoteAuthContext.run(state, resolve);
-    if (!state.session) throw new LmmError('unauthorized', 'Sign in with /login lmm and approve remote control.');
-    return { value, session: state.session };
   }
 
   private maybeCredential(value: Credential | undefined): LmmCredential | undefined {

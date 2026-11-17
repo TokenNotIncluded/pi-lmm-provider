@@ -1,6 +1,6 @@
 {
   "name": "@tokennotincluded/pi-lmm-provider",
-  "version": "0.1.0-alpha.6",
+  "version": "0.1.0-alpha.7",
   "description": "LMM OAuth provider with automatic models.dev metadata for Pi's native model selector",
   "type": "module",
   "license": "AGPL-3.0-only",
@@ -52,16 +52,14 @@
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",
     "@types/node": "26.6.6",
-    "@typescript/native-preview": "7.0.0-dev.20260707.2",
-    "pi-ask-user": "0.17.2"
+    "@typescript/native-preview": "7.0.0-dev.20260707.2"
   },
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.ts test/*.test.mjs",
     "typecheck": "tsgo --noEmit",
     "metadata:update": "node --experimental-strip-types scripts/update-model-metadata.mjs",
     "pack:check": "npm pack --dry-run --ignore-scripts",
-    "test:pi": "node scripts/test-pi.mjs",
-    "test:remote": "node --experimental-strip-types test/remote-sdk.mjs"
+    "test:pi": "node scripts/test-pi.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2"

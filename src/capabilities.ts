@@ -1,9 +1,11 @@
-import type { Api, Model, ModelCost } from '@earendil-works/pi-ai';
+import type { Api, Model, ModelCost, ThinkingLevel } from '@earendil-works/pi-ai';
 import { getBuiltinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all';
-import { THINKING_LEVELS } from '@earendil-works/pi-ai/providers/model-schema';
 import type { CapabilityResolver, VerifiedCapabilities } from './catalog.ts';
 import { SUPPORTED_APIS, type LmmApi } from './protocol.ts';
 import { peekModelsDev, type ModelsDevCatalog } from './models-dev-cache.ts';
+
+// Keep Pi protocol keys local: the native loader does not expose model-schema.
+const THINKING_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const satisfies readonly ThinkingLevel[];
 
 // Host profiles supply protocol details; account discovery never depends on a model allowlist.
 const sources = getBuiltinProviders().flatMap(provider => getBuiltinModels(provider).map(model => ({ provider, model })));

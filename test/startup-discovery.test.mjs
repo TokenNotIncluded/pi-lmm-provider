@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { InMemoryCredentialStore, InMemoryModelsStore, fauxProvider } from '@earendil-works/pi-ai';
 import lmmExtension from '../src/index.ts';
+import { INITIAL_SCOPES } from '../src/protocol.ts';
+
+test('OAuth consent contains only model and application permissions', () => {
+  assert.deepEqual([...INITIAL_SCOPES], ['catalog:read', 'balance:read', 'usage:read', 'models:invoke', 'mcp:bounties', 'mcp:drawing']);
+});
 
 test('native cold startup discovers a missing saved LMM catalog without replacing the fallback selection', async () => {
   for (const savedProvider of ['lmm', 'startup-fixture']) {
     const directory = await mkdtemp(join(tmpdir(), 'pi-lmm-startup-'));
+    await writeFile(join(directory, 'lmm-remote.json'), JSON.stringify({ enabled: true }));
     const previous = process.env.PI_CODING_AGENT_DIR;
     const previousIssuer = process.env.LMM_ISSUER;
     const previousMetadataCache = process.env.LMM_MODELS_DEV_CACHE;
@@ -37,8 +43,7 @@ test('native cold startup discovers a missing saved LMM catalog without replacin
         groups: [{ id: groupId, name: group, scope: `group:${groupId}`, multiplier: 1 }],
         models: [{ id: wireId, group_id: groupId, group, upstream_model: 'gpt-4o', name: 'gpt-4o',
           apis: ['openai-completions'], native_cost: cost, pricing: { currency: 'USD', unit: 'million_tokens',
-            price_basis: 'configured_base_rates', group_multiplier: 1, trust_multiplier: 1,
-            input: 1, output: 2, cache_read: 0, cache_write: 0, request: null,
+            price_basis: 'configured_base_rates', group_multiplier: 1, input: 1, output: 2, cache_read: 0, cache_write: 0, request: null,
             final_cost_depends_on_usage: true, updated_at: 1 } }] });
       if (url === `${issuer}/api/oauth2/balance`) return Response.json({ schema_version: 2,
         currency: 'USD', balance: 1.4, quota: 700000, quota_per_unit: 500000,

@@ -62,14 +62,13 @@ try {
       .filter((command) => command.source === 'extension')
       .map((command) => command.name)
   )
-  const requiredCommands = ['lmm-prices', 'lmm-revoke', 'lmm-diagnostics', 'lmm-cache', 'lmm-currency', 'lmm-remote']
+  const requiredCommands = ['lmm-prices', 'lmm-revoke', 'lmm-diagnostics', 'lmm-cache', 'lmm-currency']
   for (const required of requiredCommands) {
     if (!names.has(required)) throw new Error(`missing registered command: ${required}`)
   }
+  if (names.has('lmm-remote')) throw new Error('removed remote-control command is still registered')
   console.log(`Pi native loader registered ${requiredCommands.join(', ')}`)
-  console.log(run(process.execPath, ['--experimental-strip-types', '--test', 'test/remote-images.test.mjs'], { cwd: repo }))
-  console.log(run(process.execPath, ['--experimental-strip-types', 'test/remote-sdk.mjs'], { cwd: repo }))
-  console.log('Pi aggregate passed: native package loader, encrypted images, published ask_user SDK, abort and no model/catalog/balance traffic')
+  console.log('Pi native package loading passed; remote control is not registered')
 } finally {
   rmSync(tempRoot, { recursive: true, force: true })
 }

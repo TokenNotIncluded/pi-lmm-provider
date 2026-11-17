@@ -11,7 +11,7 @@ function entry(model: string, apis: CatalogEntry['apis'] = ['openai-completions'
     id: 'lmm:ZGVmYXVsdA:' + Buffer.from(model).toString('base64url'),
     group_id: 'ZGVmYXVsdA', group: 'default', upstream_model: model, name: model, apis, native_cost: null,
     pricing: { currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates',
-      group_multiplier: 1, trust_multiplier: 1, input: null, output: null, cache_read: null, cache_write: null,
+      group_multiplier: 1, input: null, output: null, cache_read: null, cache_write: null,
       request: null, final_cost_depends_on_usage: true, updated_at: 1 },
   };
 }

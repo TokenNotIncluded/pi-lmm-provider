@@ -7,7 +7,7 @@ import type { Catalog, CatalogEntry, Group, Pricing } from '../src/catalog.ts';
 const group: Group = { id: 'ZGVmYXVsdA', name: 'default', scope: 'group:ZGVmYXVsdA', multiplier: 2 };
 const pricing: Pricing = {
   currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates',
-  group_multiplier: 2, trust_multiplier: 0.5, input: 1, output: 2, cache_read: 0.1, cache_write: 0.2,
+  group_multiplier: 2, input: 1, output: 2, cache_read: 0.1, cache_write: 0.2,
   request: null, final_cost_depends_on_usage: true, updated_at: 1789240000,
 };
 const model: CatalogEntry = {
@@ -26,6 +26,7 @@ test('native selector displays readable group and model while retaining the wire
   assert.equal(admitted[0]!.model!.id, 'default / gpt-test');
   assert.equal(admitted[0]!.entry.id, model.id);
   assert.ok(!priceReport(admitted).includes(model.id));
+  assert.doesNotMatch(priceReport(admitted), /trust/i);
   assert.equal(nativeModelId({ group: '国产[Kimi/Deepseek/GLM]', upstream_model: 'deepseek-v4-flash' }),
     '国产[Kimi/Deepseek/GLM] / deepseek-v4-flash');
   assert.notEqual(nativeModelId({ group: 'a / b', upstream_model: 'c' }), nativeModelId({ group: 'a', upstream_model: 'b / c' }));
