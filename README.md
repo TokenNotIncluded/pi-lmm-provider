@@ -6,15 +6,17 @@ Current discovery and caching behavior: [Dynamic OAuth catalog](DYNAMIC_CATALOG.
 
 Use [LMM](https://api.lmm.best) models from Pi's native provider and model selector. Authentication runs through browser OAuth with a loopback callback and PKCE, so the extension never asks you to paste an API key into Pi.
 
-The current alpha source has been tested with Pi 0.86.1, 0.87.1, 0.99.2, 1.0.4, 1.2.0 and 1.5.2. Newer releases are not blocked by a version ceiling. See [Preview status](#preview-status) before relying on it for production work.
+This source candidate requires **stable Pi 1.0.4 or newer**. Raising the minimum is a breaking compatibility change from the earlier `>=0.86.1` declaration. Pi 0.86.1, 0.87.1 and 0.99.2 are explicitly unsupported; their earlier compatibility failures remain failures. Newer stable versions are not blocked by a version ceiling, but that is not a promise that every future release has been tested. See [Preview status](#preview-status) before relying on it for production work.
 
 ## Requirements
 
-- Pi 0.86.1 or newer; current local maintenance checks use Pi 1.5.2
+- Stable Pi 1.0.4 or newer; the supported host matrix retains fixed 1.0.4 and 1.5.2 checks alongside the current npm `latest`
 - Node.js 22.19.0 or newer
 - An LMM account
 
 ## Install
+
+This support change is an unreleased source candidate. A published npm `alpha` installer may predate the checks described here. To exercise this checkout's installer, run `node scripts/install.mjs /absolute/path/to/pi-lmm-provider` from the checkout. The package version and registry availability must be checked again before publishing the candidate.
 
 Install the current GitHub provider with the source-switching installer (the npm package supplies only the installer):
 
@@ -34,7 +36,11 @@ For a local checkout:
 npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider /absolute/path/to/pi-lmm-provider
 ```
 
-Add `--local` at the end to install for the current project. The installer first installs the chosen source, then removes other configured copies of this exact package from the user and current-project scopes. If the new install fails, it leaves the old copies configured. It does not remove unrelated packages. Restart Pi after switching sources. Direct `pi install` commands do not perform this cleanup; if you used one, run the source-switching command above once to reconcile the copies.
+Add `--local` at the end to install for the current project. The installer checks `--version` on the same Pi executable it will use for installation. An unsupported version stops with `LMM_PI_HOST_UNSUPPORTED`; an executable that cannot be inspected stops with `LMM_PI_HOST_UNVERIFIED`. Both stop before installing or removing sources. `LMM_PI_BIN` can select an absolute path to your intended Pi executable.
+
+After that check, the installer installs the chosen source, then removes other configured copies of this exact package from the user and current-project scopes. If the new install fails, it leaves the old copies configured. It does not remove unrelated packages. Restart Pi after switching sources. Direct `pi install` commands do not perform this cleanup; if you used one, run the source-switching command above once to reconcile the copies.
+
+When upgrading from Pi 0.86.1, 0.87.1 or 0.99.2, upgrade the Pi executable first and confirm that its `pi --version` is at least stable 1.0.4. Then switch the provider source and restart Pi. The extension also checks the executing host's exported `VERSION` before registering providers, commands or event handlers. An unsupported host is refused without replacing your existing settings or login; malformed and prerelease version strings are refused as well.
 
 To update one already-selected source without switching it:
 
@@ -66,7 +72,7 @@ Metadata matching tolerates case, punctuation, provider prefixes, reordered toke
 
 After upgrading from an older alpha, restart Pi and run `/model` or `/lmm-prices` once. The provider rebuilds the session-bound cache from the current Pi catalog; it does not trust stale `reasoning:false` metadata from an older plugin.
 
-On hosts exposing effective settings, a saved LMM default also refreshes discovery after Pi falls back to another provider because LMM's cache is empty or expired. The current selection stays as chosen; use `/model` to select the refreshed LMM entry. A non-LMM selection with a non-LMM saved default skips this startup refresh. Hosts do not expose whether an initial non-LMM selection came from a fallback or an explicit CLI/SDK override, so a saved LMM default can still trigger discovery in that case. Older hosts can recover discovery with `/lmm-prices`.
+On supported hosts exposing effective settings, a saved LMM default also refreshes discovery after Pi falls back to another provider because LMM's cache is empty or expired. The current selection stays as chosen; use `/model` to select the refreshed LMM entry. A non-LMM selection with a non-LMM saved default skips this startup refresh. Hosts do not expose whether an initial non-LMM selection came from a fallback or an explicit CLI/SDK override, so a saved LMM default can still trigger discovery in that case. A supported host without effective-settings access can recover discovery with `/lmm-prices`.
 
 Reasoning controls come from public reasoning options and installed host profiles. A public `interleaved.field = reasoning_content` declaration enables compatible reasoning-content replay. Group names never select model capabilities or cache behavior.
 
@@ -210,5 +216,9 @@ On Pi hosts exposing effective shell settings, for LMM models using Pi's local b
 ## Host integration checks
 
 Run `npm test`, `npm run typecheck` and `npm run test:pi`. The native Pi loading check verifies the model-provider commands. `PI_BIN` selects the installed CLI; current local checks use Pi 1.5.2. Tests use isolated settings and fixture credentials, with no paid model calls.
+
+The supported matrix runs the original typecheck, unit, package and native-host checks on fixed Pi 1.0.4, fixed 1.5.2 and npm `latest`. Its dependency checks still require the selected internal package versions, one canonical instance for each internal package, a clean `npm ls` result and the declared `undici` override. The minimum-version change does not relax those checks.
+
+A separate negative matrix installs the official 0.86.1, 0.87.1 and 0.99.2 hosts into disposable fixtures. It must observe the exact `LMM_PI_HOST_UNSUPPORTED` refusal through the real host loader and the selected real installer executable, with no API registration, network attempt or configuration change. A dependency-install error, import error, timeout or unrelated nonzero exit fails that check. Successful rejection is not successful compatibility, and does not replace or relabel the historical positive-matrix failures. This candidate still needs its own complete matrix result before its new support contract can be accepted.
 
 Remote control is handled by the separate ssmcp project. This provider supplies LMM login, models, prices, balance display and local Pi tool guidance. Existing `lmm-remote.json` settings are ignored, and OAuth login no longer requests remote-control permission.

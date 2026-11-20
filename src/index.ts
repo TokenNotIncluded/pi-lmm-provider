@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { getAgentDir } from '@earendil-works/pi-coding-agent';
+import { getAgentDir, VERSION } from '@earendil-works/pi-coding-agent';
 import { join } from 'node:path';
 import { LmmIntegration } from './provider.ts';
 import { CurrencySettings, CURRENCY_USAGE, currencySummary } from './currency.ts';
@@ -8,9 +8,11 @@ import { registerToolGuidance, registerToolGuard } from './tool-guidance.ts';
 import { PROVIDER_ID, boundedSignal, safeMessage } from './protocol.ts';
 import { bearerFromHeaders } from './stream.ts';
 import { diagnosticsReport, expectedModelDeclaration, type DiagnosticMessage, type RelayDiagnostics } from './response.ts';
+import { requireSupportedPiVersion } from './host-compat.mjs';
 
 /** Native Pi provider entry. No account credentials are read from environment variables. */
 export default function lmmExtension(pi: ExtensionAPI): void {
+  requireSupportedPiVersion(VERSION);
   let context: ExtensionContext | undefined;
   let latestStatus: string | undefined;
   let latestDiagnostics: RelayDiagnostics | undefined;
@@ -37,7 +39,7 @@ export default function lmmExtension(pi: ExtensionAPI): void {
     }
     // Pi may have fallen back to another provider because the saved LMM model
     // was absent from an empty/expired cache. Recover discovery without replacing
-    // the selected model. Older hosts can still refresh with /lmm-prices.
+    // the selected model. Supported hosts lacking this capability can use /lmm-prices.
     const savedProvider = (pi as { getSettings?: () => { defaultProvider?: string } }).getSettings?.().defaultProvider;
     if (ctx.model && ctx.model.provider !== PROVIDER_ID && savedProvider !== PROVIDER_ID) return;
     const result = await ctx.modelRegistry.refresh({
