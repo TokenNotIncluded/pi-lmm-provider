@@ -18,9 +18,12 @@ const inputs = ['package.json', 'package-lock.json'].map(name => new URL(`../${n
 const before = inputs.map(path => digest(readFileSync(path)));
 const developmentPins = JSON.parse(readFileSync(inputs[0], 'utf8')).devDependencies ?? {};
 function view(spec) {
-  return JSON.parse(execFileSync(npm, ['view', spec, '--json'], {
+  const metadata = JSON.parse(execFileSync(npm, ['view', spec, '--json'], {
     cwd: root, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024,
   }));
+  if (!Array.isArray(metadata)) return metadata;
+  assert.equal(metadata.length, 1, 'npm view must return exactly one selected package');
+  return metadata[0];
 }
 function dependencies(manifest) {
   return Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies, ...manifest.peerDependencies }).filter(internal).sort();
