@@ -104,6 +104,7 @@ export default function lmmExtension(pi: ExtensionAPI): void {
   pi.registerCommand('lmm-prices', {
     description: 'Refresh LMM models and inspect account-specific prices.',
     async handler(filter, ctx) {
+      await integration.refreshMetadata(boundedSignal(ctx.signal));
       const result = await ctx.modelRegistry.refresh({
         providers: [PROVIDER_ID], allowNetwork: true, force: true, signal: boundedSignal(ctx.signal),
       });

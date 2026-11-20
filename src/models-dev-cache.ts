@@ -1,6 +1,6 @@
 // Shared runtime source; sync with scripts/sync-provider-metadata.mjs.
 // Model identities, capabilities and prices come from the public API, never a bundled allowlist.
-import { readFile, mkdir, writeFile, rename, unlink } from 'node:fs/promises';
+import { open, mkdir, writeFile, rename, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -8,6 +8,9 @@ import { randomUUID } from 'node:crypto';
 export const MODELS_DEV_URL = 'https://models.dev/api.json?type=all';
 const DEFAULT_TTL = 24 * 60 * 60 * 1000;
 const RETRY_DELAY = 60 * 1000;
+const MAX_CATALOG_BYTES = 32 * 1024 * 1024;
+const MAX_CACHE_BYTES = 2 * MAX_CATALOG_BYTES + 4096;
+const MAX_TIMEOUT_MS = 5000;
 
 export interface ModelsDevCost {
   input: number;
@@ -279,6 +282,8 @@ export interface LoadModelsDevOptions {
   timeoutMs?: number;
   fetch?: typeof globalThis.fetch;
   now?: () => number;
+  signal?: AbortSignal;
+  force?: boolean;
 }
 export function peekModelsDev(cachePath = defaultCachePath()): ModelsDevCatalog {
   return states.get(cachePath)?.catalog ?? emptyCatalog;
@@ -298,6 +303,92 @@ async function persist(cachePath: string, envelope: CacheEnvelope): Promise<void
   }
 }
 
+
+async function readCache(cachePath: string): Promise<unknown> {
+  const file = await open(cachePath, 'r');
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.size > MAX_CACHE_BYTES) throw new Error('Invalid metadata cache size');
+    // Read the opened file through a fixed bound, including one byte to detect growth.
+    const bytes = Buffer.alloc(stat.size + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const part = await file.read(bytes, length, bytes.length - length, null);
+      if (!part.bytesRead) break;
+      length += part.bytesRead;
+    }
+    if (length !== stat.size) throw new Error('Metadata cache changed while reading');
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, length)));
+  } finally {
+    await file.close();
+  }
+}
+
+async function fetchPublicMetadata(
+  headers: Record<string, string>, options: LoadModelsDevOptions,
+): Promise<{ response: Response; data?: unknown }> {
+  const controller = new AbortController();
+  const cancelled = new Promise<never>((_, reject) => {
+    controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true });
+  });
+  const abort = () => controller.abort(options.signal?.reason);
+  options.signal?.addEventListener('abort', abort, { once: true });
+  if (options.signal?.aborted) abort();
+  const timeoutMs = Number.isFinite(options.timeoutMs)
+    ? Math.max(1, Math.min(options.timeoutMs!, MAX_TIMEOUT_MS)) : MAX_TIMEOUT_MS;
+  const timer = setTimeout(() => controller.abort(new Error('models.dev request timed out')), timeoutMs);
+  const download = async (): Promise<{ response: Response; data?: unknown }> => {
+    const response = await (options.fetch ?? globalThis.fetch)(MODELS_DEV_URL, {
+      headers, signal: controller.signal, credentials: 'omit', redirect: 'error',
+    });
+    if (controller.signal.aborted) {
+      void response.body?.cancel(controller.signal.reason).catch(() => {});
+      controller.signal.throwIfAborted();
+    }
+    if (response.redirected || (response.url && response.url !== MODELS_DEV_URL)) {
+      void response.body?.cancel().catch(() => {});
+      throw new Error('Unexpected models.dev response URL');
+    }
+    if (response.status === 304) return { response };
+    const contentType = response.headers.get('content-type') ?? '';
+    const declared = response.headers.get('content-length');
+    if (!response.ok || !/^application\/(?:[\w.+-]+\+)?json(?:\s*;|$)/i.test(contentType) ||
+        (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > MAX_CATALOG_BYTES)) || !response.body) {
+      void response.body?.cancel().catch(() => {});
+      throw new Error('Invalid models.dev response');
+    }
+    const reader = response.body.getReader();
+    const cancel = () => { void reader.cancel(controller.signal.reason).catch(() => {}); };
+    controller.signal.addEventListener('abort', cancel, { once: true });
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        controller.signal.throwIfAborted();
+        const part = await reader.read();
+        if (part.done) break;
+        size += part.value.byteLength;
+        if (size > MAX_CATALOG_BYTES) throw new Error('models.dev response is too large');
+        chunks.push(part.value);
+      }
+      controller.signal.throwIfAborted();
+      const data: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, size)));
+      return { response, data };
+    } finally {
+      controller.signal.removeEventListener('abort', cancel);
+      void reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  };
+  try {
+    // Bound injected fetch/body implementations even when they ignore AbortSignal.
+    return await Promise.race([download(), cancelled]);
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener('abort', abort);
+  }
+}
+
 /** Fetch public metadata only. Failure preserves stale metadata or returns an empty reference catalogue. */
 export async function loadModelsDev(options: LoadModelsDevOptions = {}): Promise<ModelsDevCatalog> {
   const cachePath = options.cachePath ?? defaultCachePath();
@@ -306,16 +397,17 @@ export async function loadModelsDev(options: LoadModelsDevOptions = {}): Promise
     state = { catalog: emptyCatalog, loaded: false, fetchedAt: 0, retryAt: 0 };
     states.set(cachePath, state);
   }
+  if (options.signal?.aborted) return state.catalog;
   if (state.pending) return state.pending;
   const now = options.now ?? Date.now;
   const current = now();
-  if (state.loaded && (current < state.retryAt || (state.fetchedAt > 0 && current - state.fetchedAt < ttl(options)))) return state.catalog;
+  if (!options.force && state.loaded && (current < state.retryAt || (state.fetchedAt > 0 && current - state.fetchedAt < ttl(options)))) return state.catalog;
   const target = state;
   const pending = (async (): Promise<ModelsDevCatalog> => {
     if (!target.loaded) {
       target.loaded = true;
       try {
-        const disk: unknown = JSON.parse(await readFile(cachePath, 'utf8'));
+        const disk = await readCache(cachePath);
         if (object(disk) && disk.version === 1 && disk.source === MODELS_DEV_URL &&
             nonnegative(disk.fetchedAt) && disk.fetchedAt <= now()) {
           const catalog = parseModelsDev(disk.data);
@@ -327,20 +419,17 @@ export async function loadModelsDev(options: LoadModelsDevOptions = {}): Promise
           }
         }
       } catch { /* Invalid or absent cache is not a model-discovery failure. */ }
-      if (target.fetchedAt > 0 && now() - target.fetchedAt < ttl(options)) return target.catalog;
+      if (!options.force && target.fetchedAt > 0 && now() - target.fetchedAt < ttl(options)) return target.catalog;
     }
     try {
       const headers: Record<string, string> = { accept: 'application/json', 'user-agent': 'lmm-model-metadata/1' };
       if (target.envelope?.etag) headers['if-none-match'] = target.envelope.etag;
-      const response = await (options.fetch ?? globalThis.fetch)(MODELS_DEV_URL, {
-        headers, signal: AbortSignal.timeout(options.timeoutMs ?? 6000), credentials: 'omit',
-      });
+      const { response, data } = await fetchPublicMetadata(headers, options);
       let envelope: CacheEnvelope;
       if (response.status === 304 && target.envelope) {
         envelope = { ...target.envelope, fetchedAt: now() };
       } else {
         if (!response.ok) throw new Error('models.dev HTTP ' + response.status);
-        const data: unknown = await response.json();
         const catalog = parseModelsDev(data);
         if (!catalog.stats.models) throw new Error('models.dev returned no valid model records');
         envelope = { version: 1, source: MODELS_DEV_URL, fetchedAt: now(), data };
@@ -353,7 +442,7 @@ export async function loadModelsDev(options: LoadModelsDevOptions = {}): Promise
       target.retryAt = 0;
       await persist(cachePath, envelope).catch(() => {});
     } catch {
-      target.retryAt = now() + RETRY_DELAY;
+      if (!options.signal?.aborted) target.retryAt = now() + RETRY_DELAY;
     }
     return target.catalog;
   })();

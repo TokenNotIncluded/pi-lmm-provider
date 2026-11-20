@@ -363,6 +363,11 @@ export class LmmIntegration {
     finally { if (this.balancePending?.task === task) this.balancePending = undefined; }
   }
 
+  /** Explicit refresh rechecks public metadata without making an inference request. */
+  async refreshMetadata(signal?: AbortSignal): Promise<void> {
+    await loadModelsDev({ force: true, signal });
+  }
+
   prices(filter = ''): string {
     return this.current ? `${this.current.catalogStale ? 'Cached catalog: server prices and full model coverage need an online refresh.\n' : ''}${priceReport(this.current.admissions, filter, this.current.groups)}` : 'No account-scoped LMM catalog. Use /login, then retry /lmm-prices. No models or capabilities are guessed.';
   }
