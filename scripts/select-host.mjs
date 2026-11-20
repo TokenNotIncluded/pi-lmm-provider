@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Test-only selection; leave the committed package manifest and lockfile intact.
@@ -56,6 +57,52 @@ function resolveFrom(name, cwd) {
   }));
 }
 
+// Read installed manifests without importing payload-only packages such as esbuild's
+// platform binary. Only declared runtime edges from the selected cohort are evidence.
+function declaredRuntimePackages(identities) {
+  const boundary = realpathSync(join(root, 'node_modules')) + sep;
+  const pending = [...identities.values()].map(identity => ({ packageJson: identity.packageJson, via: [] }));
+  const seen = new Map();
+  for (const item of pending) {
+    const packageJson = realpathSync(item.packageJson);
+    assert.ok(packageJson.startsWith(boundary), 'Selected dependency escaped this installation');
+    if (seen.has(packageJson)) continue;
+    assert.ok(seen.size < 4096, 'Unexpectedly large installed dependency closure');
+    const bytes = readFileSync(packageJson);
+    const manifest = JSON.parse(bytes);
+    assert.equal(typeof manifest.name, 'string');
+    assert.equal(typeof manifest.version, 'string');
+    const record = { name: manifest.name, version: manifest.version, packageJson,
+      manifestSha256: digest(bytes), via: item.via };
+    seen.set(packageJson, record);
+    const declared = { ...manifest.peerDependencies, ...manifest.dependencies, ...manifest.optionalDependencies };
+    for (const [name, spec] of Object.entries(declared)) {
+      assert.match(name, /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i);
+      const optional = Object.hasOwn(manifest.optionalDependencies ?? {}, name) ||
+        (!Object.hasOwn(manifest.dependencies ?? {}, name) && manifest.peerDependenciesMeta?.[name]?.optional === true);
+      let target;
+      for (const directory of createRequire(packageJson).resolve.paths(name) ?? []) {
+        const path = join(directory, name, 'package.json');
+        try { target = realpathSync(path); break; }
+        catch (error) { if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error; }
+      }
+      assert.ok(target || optional, 'Missing declared dependency ' + manifest.name + ' -> ' + name);
+      if (!target) continue; // An absent optional/platform package is not invented.
+      assert.ok(target.startsWith(boundary), 'Declared dependency escaped this installation');
+      const installed = JSON.parse(readFileSync(target, 'utf8'));
+      const alias = typeof spec === 'string' && /^npm:((?:@[^/]+\/)?[^@]+)@/.exec(spec);
+      assert.equal(installed.name, alias ? alias[1] : name, 'Installed dependency name differs from its declaration');
+      assert.ok(pending.length < 16384, 'Unexpectedly large installed dependency graph');
+      pending.push({ packageJson: target, via: [...item.via, {
+        consumer: manifest.name, consumerPackageJson: packageJson, consumerManifestSha256: record.manifestSha256,
+        dependency: name, declared: spec, packageJson: target,
+      }] });
+    }
+  }
+  return new Map([...seen.values()].map(record =>
+    ['extraneous: ' + record.name + '@' + record.version + ' ' + dirname(record.packageJson), record]));
+}
+
 try {
   const selected = view(`${host}@${selector}`);
   assert.equal(selected.name, host);
@@ -102,7 +149,15 @@ try {
   const expectedProblems = new Set([...identities.values()].flatMap(identity =>
     (Object.hasOwn(developmentPins, identity.name) ? ['invalid', 'extraneous'] : ['extraneous'])
       .map(kind => `${kind}: ${identity.name}@${version} ${dirname(identity.packageJson)}`)));
-  for (const problem of tree.problems ?? []) assert.ok(expectedProblems.has(problem), `Unexpected npm dependency problem: ${problem}`);
+  const unexpected = (tree.problems ?? []).filter(problem => !expectedProblems.has(problem));
+  // Invalid/missing diagnostics are never excused by dependency reachability.
+  for (const problem of unexpected) assert.ok(problem.startsWith('extraneous: '), 'Unexpected npm dependency problem: ' + problem);
+  const declared = unexpected.length ? declaredRuntimePackages(identities) : new Map();
+  for (const problem of unexpected) {
+    const proof = declared.get(problem);
+    assert.ok(proof, 'Unexpected npm dependency problem: ' + problem);
+    console.log(JSON.stringify({ event: 'pi-proven-extraneous', problem, ...proof }));
+  }
   if (listing.status === 1) {
     assert.ok(tree.problems?.length, 'npm ls failed without recognized dependency diagnostics');
     if (tree.error) assert.equal(tree.error.code, 'ELSPROBLEMS');
