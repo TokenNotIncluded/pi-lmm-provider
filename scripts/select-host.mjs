@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, realpathSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join, sep } from 'node:path';
+import { chmodSync, copyFileSync, lstatSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Test-only selection; leave the committed package manifest and lockfile intact.
@@ -16,7 +15,7 @@ const internal = name => name === '@earendil-works/chord' || name.startsWith('@e
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const inputs = ['package.json', 'package-lock.json'].map(name => new URL(`../${name}`, import.meta.url));
 const before = inputs.map(path => digest(readFileSync(path)));
-const developmentPins = JSON.parse(readFileSync(inputs[0], 'utf8')).devDependencies ?? {};
+const sourceManifest = JSON.parse(readFileSync(inputs[0], 'utf8'));
 function view(spec) {
   const metadata = JSON.parse(execFileSync(npm, ['view', spec, '--json'], {
     cwd: root, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024,
@@ -60,50 +59,23 @@ function resolveFrom(name, cwd) {
   }));
 }
 
-// Read installed manifests without importing payload-only packages such as esbuild's
-// platform binary. Only declared runtime edges from the selected cohort are evidence.
-function declaredRuntimePackages(identities) {
-  const boundary = realpathSync(join(root, 'node_modules')) + sep;
-  const pending = [...identities.values()].map(identity => ({ packageJson: identity.packageJson, via: [] }));
-  const seen = new Map();
-  for (const item of pending) {
-    const packageJson = realpathSync(item.packageJson);
-    assert.ok(packageJson.startsWith(boundary), 'Selected dependency escaped this installation');
-    if (seen.has(packageJson)) continue;
-    assert.ok(seen.size < 4096, 'Unexpectedly large installed dependency closure');
-    const bytes = readFileSync(packageJson);
-    const manifest = JSON.parse(bytes);
-    assert.equal(typeof manifest.name, 'string');
-    assert.equal(typeof manifest.version, 'string');
-    const record = { name: manifest.name, version: manifest.version, packageJson,
-      manifestSha256: digest(bytes), via: item.via };
-    seen.set(packageJson, record);
-    const declared = { ...manifest.peerDependencies, ...manifest.dependencies, ...manifest.optionalDependencies };
-    for (const [name, spec] of Object.entries(declared)) {
-      assert.match(name, /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i);
-      const optional = Object.hasOwn(manifest.optionalDependencies ?? {}, name) ||
-        (!Object.hasOwn(manifest.dependencies ?? {}, name) && manifest.peerDependenciesMeta?.[name]?.optional === true);
-      let target;
-      for (const directory of createRequire(packageJson).resolve.paths(name) ?? []) {
-        const path = join(directory, name, 'package.json');
-        try { target = realpathSync(path); break; }
-        catch (error) { if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error; }
-      }
-      assert.ok(target || optional, 'Missing declared dependency ' + manifest.name + ' -> ' + name);
-      if (!target) continue; // An absent optional/platform package is not invented.
-      assert.ok(target.startsWith(boundary), 'Declared dependency escaped this installation');
-      const installed = JSON.parse(readFileSync(target, 'utf8'));
-      const alias = typeof spec === 'string' && /^npm:((?:@[^/]+\/)?[^@]+)@/.exec(spec);
-      assert.equal(installed.name, alias ? alias[1] : name, 'Installed dependency name differs from its declaration');
-      assert.ok(pending.length < 16384, 'Unexpectedly large installed dependency graph');
-      pending.push({ packageJson: target, via: [...item.via, {
-        consumer: manifest.name, consumerPackageJson: packageJson, consumerManifestSha256: record.manifestSha256,
-        dependency: name, declared: spec, packageJson: target,
-      }] });
+function fixtureManifest(names, version) {
+  const manifest = structuredClone(sourceManifest);
+  const selected = new Set(names);
+  for (const field of ['dependencies', 'optionalDependencies', 'devDependencies']) {
+    for (const name of Object.keys(manifest[field] ?? {})) {
+      if (!internal(name)) continue;
+      assert.ok(selected.has(name), 'A direct Pi dependency is outside the selected host cohort');
+      manifest[field][name] = version;
     }
   }
-  return new Map([...seen.values()].map(record =>
-    ['extraneous: ' + record.name + '@' + record.version + ' ' + dirname(record.packageJson), record]));
+  manifest.devDependencies ??= {};
+  for (const name of names) {
+    if (!Object.hasOwn(manifest.dependencies ?? {}, name) && !Object.hasOwn(manifest.optionalDependencies ?? {}, name)) {
+      manifest.devDependencies[name] = version;
+    }
+  }
+  return manifest;
 }
 
 try {
@@ -131,40 +103,59 @@ try {
     integrity: manifests.get(name).dist?.integrity ?? null,
     gitHead: manifests.get(name).gitHead ?? null,
   })) }));
-  const install = spawnSync(npm, ['install', '--no-save', '--package-lock=false', '--ignore-scripts', ...names.map(name => `${name}@${version}`)], {
-    cwd: root, stdio: 'inherit', timeout: 300_000,
+  // Solve a consistent temporary manifest, seeded by the original lock. Installing
+  // an older cohort over --no-save dev pins can retain a second physical instance.
+  const fixture = mkdtempSync(join(dirname(root), '.pi-host-matrix-'));
+  chmodSync(fixture, 0o700);
+  copyFileSync(inputs[0], join(fixture, 'source-package.json'));
+  copyFileSync(inputs[1], join(fixture, 'source-package-lock.json'));
+  copyFileSync(inputs[1], join(fixture, 'package-lock.json'));
+  assert.deepEqual(['source-package.json', 'source-package-lock.json'].map(name =>
+    digest(readFileSync(join(fixture, name)))), before, 'The fixture must use the exact source inputs');
+  const manifest = fixtureManifest(names, version);
+  const manifestBytes = JSON.stringify(manifest, null, 2) + '\n';
+  writeFileSync(join(fixture, 'package.json'), manifestBytes, { flag: 'wx', mode: 0o600 });
+  const installArgs = ['install', '--ignore-scripts', '--prefer-dedupe'];
+  console.log(JSON.stringify({ event: 'pi-install-fixture', fixture, sourceInputsSha256: before,
+    manifestSha256: digest(manifestBytes), command: [npm, ...installArgs],
+    npmVersion: execFileSync(npm, ['--version'], { encoding: 'utf8', timeout: 10_000 }).trim() }));
+  const install = spawnSync(npm, installArgs, {
+    cwd: fixture, stdio: 'inherit', timeout: 300_000,
   });
   if (install.error) throw install.error;
   assert.equal(install.status, 0, 'Failed to install the selected official Pi dependency cohort');
 
   const listing = spawnSync(npm, ['ls', '--all', '--json'], {
-    cwd: root, encoding: 'utf8', timeout: 60_000, maxBuffer: 16 * 1024 * 1024,
+    cwd: fixture, encoding: 'utf8', timeout: 60_000, maxBuffer: 16 * 1024 * 1024,
   });
-  console.log(JSON.stringify({ event: 'installed-npm-ls', status: listing.status, stdout: listing.stdout, stderr: listing.stderr }));
+  console.log(JSON.stringify({ event: 'installed-npm-ls', cwd: fixture, status: listing.status, stdout: listing.stdout, stderr: listing.stderr }));
   if (listing.error) throw listing.error;
-  assert.ok(listing.status === 0 || listing.status === 1, 'npm ls could not inspect the installed tree');
+  assert.equal(listing.status, 0, 'The selected fixture must have no npm dependency errors');
   const tree = JSON.parse(listing.stdout);
+  assert.deepEqual(tree.problems ?? [], [], 'The selected fixture must have no npm dependency problems');
+  assert.ok(!tree.error, 'npm ls reported an inspection error');
+  assert.equal(readFileSync(join(fixture, 'package.json'), 'utf8'), manifestBytes, 'npm must preserve the selected fixture manifest');
+  console.log(JSON.stringify({ event: 'pi-installed-fixture-lock',
+    path: join(fixture, 'package-lock.json'), sha256: digest(readFileSync(join(fixture, 'package-lock.json'))) }));
+
+  // Keep the original npm-ci tree for failure evidence. The new tree is moved on
+  // the same filesystem so all original tests resolve from their real source root.
+  const modules = join(root, 'node_modules');
+  const installed = join(fixture, 'node_modules');
+  assert.ok(lstatSync(modules).isDirectory(), 'Expected the original local npm-ci directory');
+  assert.ok(lstatSync(installed).isDirectory(), 'Expected a local selected dependency directory');
+  const baseline = join(fixture, 'baseline-node_modules');
+  renameSync(modules, baseline);
+  try { renameSync(installed, modules); }
+  catch (error) { renameSync(baseline, modules); throw error; }
+  console.log(JSON.stringify({ event: 'pi-installed-tree-handoff', modules, baseline }));
+
   const identities = new Map(names.map(name => [name, resolveFrom(name, root)]));
   console.log(JSON.stringify({ event: 'installed-pi-identities', packages: [...identities.values()] }));
   for (const identity of identities.values()) assert.equal(identity.version, version, `${identity.name} must match the selected host`);
-  // --no-save intentionally keeps the root's dev pins. Only their corresponding
-  // invalid/extraneous reports are allowed; dependency errors still fail here.
-  const expectedProblems = new Set([...identities.values()].flatMap(identity =>
-    (Object.hasOwn(developmentPins, identity.name) ? ['invalid', 'extraneous'] : ['extraneous'])
-      .map(kind => `${kind}: ${identity.name}@${version} ${dirname(identity.packageJson)}`)));
-  const unexpected = (tree.problems ?? []).filter(problem => !expectedProblems.has(problem));
-  // Invalid/missing diagnostics are never excused by dependency reachability.
-  for (const problem of unexpected) assert.ok(problem.startsWith('extraneous: '), 'Unexpected npm dependency problem: ' + problem);
-  const declared = unexpected.length ? declaredRuntimePackages(identities) : new Map();
-  for (const problem of unexpected) {
-    const proof = declared.get(problem);
-    assert.ok(proof, 'Unexpected npm dependency problem: ' + problem);
-    console.log(JSON.stringify({ event: 'pi-proven-extraneous', problem, ...proof }));
-  }
-  if (listing.status === 1) {
-    assert.ok(tree.problems?.length, 'npm ls failed without recognized dependency diagnostics');
-    if (tree.error) assert.equal(tree.error.code, 'ELSPROBLEMS');
-  }
+  const undici = resolveFrom('undici', dirname(identities.get(host).packageJson));
+  console.log(JSON.stringify({ event: 'pi-host-override-resolution', ...undici }));
+  assert.equal(undici.version, sourceManifest.overrides[host].undici, 'The original host-scoped undici override must remain effective');
   for (const [name, manifest] of manifests) {
     for (const dependency of dependencies(manifest)) {
       const actual = resolveFrom(dependency, dirname(identities.get(name).packageJson));
