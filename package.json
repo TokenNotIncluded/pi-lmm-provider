@@ -35,6 +35,8 @@
   "files": [
     "assets",
     "src/*.ts",
+    "src/host-compat.mjs",
+    "src/host-compat.d.mts",
     "src/models-dev.LICENSE",
     "scripts/install.mjs",
     "README.md",
@@ -44,8 +46,8 @@
     "scripts/update-model-metadata.mjs"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.86.1",
-    "@earendil-works/pi-coding-agent": ">=0.86.1",
+    "@earendil-works/pi-ai": ">=1.0.4",
+    "@earendil-works/pi-coding-agent": ">=1.0.4",
     "typebox": "*"
   },
   "devDependencies": {

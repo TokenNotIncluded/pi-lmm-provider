@@ -71,9 +71,13 @@ test('native cold startup discovers a missing saved LMM catalog without replacin
       assert.deepEqual(runtime.getAvailableSnapshot().map((model) => model.provider), ['startup-fixture']);
       const settings = SettingsManager.inMemory({ defaultProvider: savedProvider,
         defaultModel: savedProvider === 'lmm' ? 'default / gpt-4o' : 'fallback' });
+      let supportsEffectiveSettings;
       const loader = new DefaultResourceLoader({ cwd: directory, agentDir: directory, settingsManager: settings,
         noExtensions: true, disabledBuiltinExtensions: ['mcp'], noSkills: true,
-        noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [lmmExtension] });
+        noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [(pi) => {
+          supportsEffectiveSettings = typeof pi.getSettings === 'function';
+          lmmExtension(pi);
+        }] });
       await loader.reload();
       const result = await createAgentSession({ cwd: directory, agentDir: directory, modelRuntime: runtime,
         settingsManager: settings, resourceLoader: loader, sessionManager: SessionManager.inMemory(directory), noTools: true });
@@ -88,7 +92,16 @@ test('native cold startup discovers a missing saved LMM catalog without replacin
       assert.deepEqual(errors, []);
       assert.equal(session.model?.provider, initialModel.provider, 'discovery does not override the current provider');
       assert.equal(session.model?.id, initialModel.id, 'discovery does not override the current model');
+      assert.equal(typeof supportsEffectiveSettings, 'boolean', 'capability comes from the actual host ExtensionAPI');
       if (savedProvider === 'lmm') {
+        if (!supportsEffectiveSettings) {
+          assert.deepEqual(requests, [], 'an old host does not infer the saved provider from a fallback model');
+          assert.equal(runtime.getModel('lmm', 'default / gpt-4o'), undefined);
+          await session.prompt('/lmm-prices');
+          assert.deepEqual(errors, []);
+          assert.equal(session.model?.provider, initialModel.provider, 'the command does not override the current provider');
+          assert.equal(session.model?.id, initialModel.id, 'the command does not override the current model');
+        }
         assert.ok(runtime.getModel('lmm', 'default / gpt-4o'));
         assert.deepEqual(requests.sort(), [`${issuer}/api/oauth2/balance`, `${issuer}/api/oauth2/catalog`, 'https://models.dev/api.json?type=all'].sort());
       } else {

@@ -47,7 +47,7 @@ test('switching source installs first, removes other sources in both scopes and 
     if (args[0] === 'install') f.write(path, [...f.read(path), source]);
     else f.write(path, f.read(path).filter((item) => item !== source));
   };
-  const result = switchSource(npm, false, { cwd: f.cwd, agentDir: f.agentDir, run });
+  const result = switchSource(npm, false, { cwd: f.cwd, agentDir: f.agentDir, run, inspectVersion: () => '1.5.2' });
   assert.deepEqual(calls, [['install', npm], ['remove', git], ['remove', '--local', f.localPath]]);
   assert.deepEqual(f.read(f.userSettings), ['npm:unrelated', npm]);
   assert.deepEqual(f.read(f.projectSettings), []);
@@ -58,7 +58,7 @@ test('switching source installs first, removes other sources in both scopes and 
 test('a failed new installation leaves existing sources untouched', (t) => {
   const f = fixture(t);
   f.write(f.userSettings, [git]);
-  assert.throws(() => switchSource(npm, false, { cwd: f.cwd, agentDir: f.agentDir, run() { throw new Error('install failed'); } }), /install failed/);
+  assert.throws(() => switchSource(npm, false, { cwd: f.cwd, agentDir: f.agentDir, inspectVersion: () => '1.5.2', run() { throw new Error('install failed'); } }), /install failed/);
   assert.deepEqual(f.read(f.userSettings), [git]);
 });
 
@@ -98,7 +98,12 @@ test('real Pi CLI switches two local checkouts without leaving duplicate setting
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   };
   run(['install', oldPath]);
-  switchSource(f.localPath, false, { cwd: f.cwd, agentDir: f.agentDir, run });
+  const inspectVersion = () => {
+    const result = spawnSync(process.execPath, [cli, '--version'], { cwd: f.cwd, env, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    return result.stdout.trim();
+  };
+  switchSource(f.localPath, false, { cwd: f.cwd, agentDir: f.agentDir, run, inspectVersion });
   assert.equal(f.read(f.userSettings).length, 1);
   assert.deepEqual(planRemoval(f.localPath, false, f.userSettings, f.projectSettings, f.cwd), []);
 });

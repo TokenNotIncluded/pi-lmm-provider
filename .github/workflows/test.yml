@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pi: ['0.86.1', '0.87.1', '0.99.2', '1.0.4', latest]
+        pi: ['1.0.4', '1.5.2', latest]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,8 +23,35 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - name: Test the selected official Pi host
-        run: npm install --no-save --package-lock=false --ignore-scripts "@earendil-works/pi-ai@${{ matrix.pi }}" "@earendil-works/pi-coding-agent@${{ matrix.pi }}"
+        run: node scripts/select-host.mjs "${{ matrix.pi }}"
       - run: npm run typecheck
       - run: npm test
       - run: npm run pack:check
       - run: npm run test:pi
+
+  rejected-host:
+    name: Reject unsupported Pi (${{ matrix.pi }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        pi: ['0.86.1', '0.87.1', '0.99.2']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Require actual loader and installer refusal without side effects
+        run: node scripts/test-rejected-host.mjs "${{ matrix.pi }}"
+      - name: Preserve the exact refusal evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-rejected-host-${{ matrix.pi }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/pi-rejected-host-${{ matrix.pi }}
+          if-no-files-found: error
