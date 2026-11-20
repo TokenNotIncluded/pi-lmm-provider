@@ -14,7 +14,7 @@ const modelId = `lmm:${groupId}:Z3B0LTRvLW1pbmk`;
 const catalog = (resource: string) => ({ schema_version: 1, resource, updated_at: 1789240000,
   groups: [{ id: groupId, name: 'default', scope: `group:${groupId}`, multiplier: 1 }],
   models: [{ id: modelId, group_id: groupId, group: 'default', upstream_model: 'gpt-4o-mini', name: 'default / gpt-4o-mini', apis: ['openai-completions'],
-    pricing: { currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates', group_multiplier: 1, trust_multiplier: 1, input: 1, output: 2, cache_read: 0, cache_write: 0, request: null, final_cost_depends_on_usage: true, updated_at: 1789240000 },
+    pricing: { currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates', group_multiplier: 1, input: 1, output: 2, cache_read: 0, cache_write: 0, request: null, final_cost_depends_on_usage: true, updated_at: 1789240000 },
     native_cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } }], });
 function value(access: string, refresh: string, session = 'session'): OAuthCredential { return { type: 'oauth', access, refresh, expires: Date.now() + 60_000,
   lmm_issuer: issuer, lmm_resource: `${issuer}/api/oauth2`, lmm_session: session, scope }; }

@@ -1,39 +1,49 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { InMemoryCredentialStore, InMemoryModelsStore, fauxProvider } from '@earendil-works/pi-ai';
 import lmmExtension from '../src/index.ts';
+import { INITIAL_SCOPES } from '../src/protocol.ts';
 
-test('native startup discovers a saved LMM catalog, with explicit recovery on older hosts', async () => {
+test('OAuth consent contains only model and application permissions', () => {
+  assert.deepEqual([...INITIAL_SCOPES], ['catalog:read', 'balance:read', 'usage:read', 'models:invoke', 'mcp:bounties', 'mcp:drawing']);
+});
+
+test('native cold startup discovers a missing saved LMM catalog without replacing the fallback selection', async () => {
   for (const savedProvider of ['lmm', 'startup-fixture']) {
     const directory = await mkdtemp(join(tmpdir(), 'pi-lmm-startup-'));
+    await writeFile(join(directory, 'lmm-remote.json'), JSON.stringify({ enabled: true }));
     const previous = process.env.PI_CODING_AGENT_DIR;
+    const previousIssuer = process.env.LMM_ISSUER;
+    const previousMetadataCache = process.env.LMM_MODELS_DEV_CACHE;
     const originalFetch = globalThis.fetch;
     const requests = [];
     let session;
-    let hostSupportsSettings = false;
     process.env.PI_CODING_AGENT_DIR = directory;
-    const issuer = 'https://api.lmm.best';
+    const issuer = 'https://startup.lmm.test';
+    process.env.LMM_ISSUER = issuer;
+    process.env.LMM_MODELS_DEV_CACHE = join(directory, 'public-models.json');
     const group = 'default';
     const groupId = Buffer.from(group).toString('base64url');
     const wireId = `lmm:${groupId}:${Buffer.from('gpt-4o').toString('base64url')}`;
     const cost = { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 };
-    globalThis.fetch = async (input) => {
+    globalThis.fetch = async (input, options) => {
       const url = String(input);
       requests.push(url);
-      if (url === 'https://models.dev/api.json') return Response.json({ openai: { npm: '@ai-sdk/openai',
-        models: { 'gpt-4o': { id: 'gpt-4o', reasoning: false, tool_call: true,
-          limit: { context: 128000, output: 16384 }, modalities: { input: ['text', 'image'], output: ['text'] } } } } });
+      if (url === 'https://models.dev/api.json?type=all') {
+        assert.equal(options?.headers?.authorization, undefined);
+        return Response.json({ fixture: { models: { fixture: { id: 'fixture', reasoning: false, tool_call: false,
+          limit: { context: 4096, output: 1024 }, modalities: { input: ['text'], output: ['text'] } } } } });
+      }
       if (url === `${issuer}/api/oauth2/catalog`) return Response.json({ schema_version: 1,
         resource: `${issuer}/api/oauth2`, updated_at: 1,
         groups: [{ id: groupId, name: group, scope: `group:${groupId}`, multiplier: 1 }],
         models: [{ id: wireId, group_id: groupId, group, upstream_model: 'gpt-4o', name: 'gpt-4o',
           apis: ['openai-completions'], native_cost: cost, pricing: { currency: 'USD', unit: 'million_tokens',
-            price_basis: 'configured_base_rates', group_multiplier: 1, trust_multiplier: 1,
-            input: 1, output: 2, cache_read: 0, cache_write: 0, request: null,
+            price_basis: 'configured_base_rates', group_multiplier: 1, input: 1, output: 2, cache_read: 0, cache_write: 0, request: null,
             final_cost_depends_on_usage: true, updated_at: 1 } }] });
       if (url === `${issuer}/api/oauth2/balance`) return Response.json({ schema_version: 2,
         currency: 'USD', balance: 1.4, quota: 700000, quota_per_unit: 500000,
@@ -61,9 +71,13 @@ test('native startup discovers a saved LMM catalog, with explicit recovery on ol
       assert.deepEqual(runtime.getAvailableSnapshot().map((model) => model.provider), ['startup-fixture']);
       const settings = SettingsManager.inMemory({ defaultProvider: savedProvider,
         defaultModel: savedProvider === 'lmm' ? 'default / gpt-4o' : 'fallback' });
+      let supportsEffectiveSettings;
       const loader = new DefaultResourceLoader({ cwd: directory, agentDir: directory, settingsManager: settings,
         noExtensions: true, disabledBuiltinExtensions: ['mcp'], noSkills: true,
-        noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [(pi) => { hostSupportsSettings = typeof pi.getSettings === 'function'; lmmExtension(pi); }] });
+        noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [(pi) => {
+          supportsEffectiveSettings = typeof pi.getSettings === 'function';
+          lmmExtension(pi);
+        }] });
       await loader.reload();
       const result = await createAgentSession({ cwd: directory, agentDir: directory, modelRuntime: runtime,
         settingsManager: settings, resourceLoader: loader, sessionManager: SessionManager.inMemory(directory), noTools: true });
@@ -78,15 +92,18 @@ test('native startup discovers a saved LMM catalog, with explicit recovery on ol
       assert.deepEqual(errors, []);
       assert.equal(session.model?.provider, initialModel.provider, 'discovery does not override the current provider');
       assert.equal(session.model?.id, initialModel.id, 'discovery does not override the current model');
+      assert.equal(typeof supportsEffectiveSettings, 'boolean', 'capability comes from the actual host ExtensionAPI');
       if (savedProvider === 'lmm') {
-        if (!hostSupportsSettings) {
-          assert.deepEqual(requests, [], 'older hosts do not expose the saved default to extensions');
-          const refreshed = await runtime.refresh({ providers: ['lmm'], allowNetwork: true, force: true,
-            signal: new AbortController().signal });
-          assert.equal(refreshed.errors.size, 0, 'explicit discovery remains available on older hosts');
+        if (!supportsEffectiveSettings) {
+          assert.deepEqual(requests, [], 'an old host does not infer the saved provider from a fallback model');
+          assert.equal(runtime.getModel('lmm', 'default / gpt-4o'), undefined);
+          await session.prompt('/lmm-prices');
+          assert.deepEqual(errors, []);
+          assert.equal(session.model?.provider, initialModel.provider, 'the command does not override the current provider');
+          assert.equal(session.model?.id, initialModel.id, 'the command does not override the current model');
         }
         assert.ok(runtime.getModel('lmm', 'default / gpt-4o'));
-        assert.deepEqual(requests.sort(), [`${issuer}/api/oauth2/balance`, `${issuer}/api/oauth2/catalog`, 'https://models.dev/api.json'].sort());
+        assert.deepEqual(requests.sort(), [`${issuer}/api/oauth2/balance`, `${issuer}/api/oauth2/catalog`, 'https://models.dev/api.json?type=all'].sort());
       } else {
         assert.deepEqual(requests, [], 'a non-LMM default stays independent of LMM model discovery');
       }
@@ -94,6 +111,8 @@ test('native startup discovers a saved LMM catalog, with explicit recovery on ol
     } finally {
       session?.dispose();
       globalThis.fetch = originalFetch;
+      if (previousIssuer === undefined) delete process.env.LMM_ISSUER; else process.env.LMM_ISSUER = previousIssuer;
+      if (previousMetadataCache === undefined) delete process.env.LMM_MODELS_DEV_CACHE; else process.env.LMM_MODELS_DEV_CACHE = previousMetadataCache;
       if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
       else process.env.PI_CODING_AGENT_DIR = previous;
       await rm(directory, { recursive: true, force: true });

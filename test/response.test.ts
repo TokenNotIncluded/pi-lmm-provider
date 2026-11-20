@@ -144,7 +144,7 @@ test('stream cancellation reaches the upstream reader', async () => {
 test('real Pi adapter emits thinking events and persists actual request/declared response metadata', async () => {
   const cost = { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 };
   const model: Model<LmmApi> = { id: 'GPT-Pro / gpt-6.1-sol', name: 'test', provider: 'lmm', api: 'openai-completions', baseUrl: 'https://api.lmm.best/v1', reasoning: true, thinkingLevelMap: { max: 'max' }, compat: { supportsReasoningEffort: true }, input: ['text'], cost, contextWindow: 4096, maxTokens: 1024 };
-  const admission: Admission = { model, entry: { id: 'fixture', group_id: 'ZGVmYXVsdA', group: 'GPT-Pro', upstream_model: 'gpt-6.1-sol', name: 'test', apis: ['openai-completions'], native_cost: cost, pricing: { currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates', group_multiplier: 1, trust_multiplier: 1, input: 1, output: 2, cache_read: 0, cache_write: 0, request: null, final_cost_depends_on_usage: true, updated_at: 1 } } };
+  const admission: Admission = { model, entry: { id: 'fixture', group_id: 'ZGVmYXVsdA', group: 'GPT-Pro', upstream_model: 'gpt-6.1-sol', name: 'test', apis: ['openai-completions'], native_cost: cost, pricing: { currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates', group_multiplier: 1, input: 1, output: 2, cache_read: 0, cache_write: 0, request: null, final_cost_depends_on_usage: true, updated_at: 1 } } };
   let requests = 0;
   const http = new LmmHttp({ fetch: async (_input, init) => {
     requests++;

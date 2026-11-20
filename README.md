@@ -1,20 +1,24 @@
 # LMM provider for Pi
 
+Current discovery and caching behavior: [Dynamic OAuth catalog](DYNAMIC_CATALOG.md).
+
 <img src="https://raw.githubusercontent.com/TokenNotIncluded/pi-lmm-provider/main/assets/icon.svg" alt="LMM for Pi" width="96" height="96" />
 
 Use [LMM](https://api.lmm.best) models from Pi's native provider and model selector. Authentication runs through browser OAuth with a loopback callback and PKCE, so the extension never asks you to paste an API key into Pi.
 
-This is an alpha release last tested with Pi 0.86.1, 0.87.1, 0.99.2, 1.0.4 and 1.2.0. Newer releases are not blocked by a version ceiling. See [Preview status](#preview-status) before relying on it for production work.
+The `v0.1.0-alpha.7` source requires **stable Pi 1.0.4 or newer**. Raising the minimum is a breaking compatibility change from the earlier `>=0.86.1` declaration. Pi 0.86.1, 0.87.1 and 0.99.2 are explicitly unsupported; their earlier compatibility failures remain failures. Newer stable versions are not blocked by a version ceiling, but that is not a promise that every future release has been tested. See [Preview status](#preview-status) before relying on it for production work.
 
 ## Requirements
 
-- Pi 0.86.1 or newer; current local maintenance checks use Pi 1.2.0
+- Stable Pi 1.0.4 or newer; the supported host matrix retains fixed 1.0.4 and 1.5.2 checks alongside the current npm `latest`
 - Node.js 22.19.0 or newer
 - An LMM account
 
 ## Install
 
-Install the current GitHub provider with the source-switching installer (the npm package supplies only the installer):
+The npm commands below follow the registry's current `alpha` distribution tag. A successful source CI run does not update that channel. To use this `0.1.0-alpha.7` checkout's installer, run `node scripts/install.mjs /absolute/path/to/pi-lmm-provider` from the checkout. The release workflow must verify registry integrity and the `alpha` tag before the npm channel is treated as this same version.
+
+Install the current GitHub provider with the source-switching installer (this command uses the npm package's installer):
 
 ```sh
 npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider git:github.com/TokenNotIncluded/pi-lmm-provider
@@ -32,7 +36,11 @@ For a local checkout:
 npm exec --yes --package=@tokennotincluded/pi-lmm-provider@alpha -- lmm-pi-provider /absolute/path/to/pi-lmm-provider
 ```
 
-Add `--local` at the end to install for the current project. The installer first installs the chosen source, then removes other configured copies of this exact package from the user and current-project scopes. If the new install fails, it leaves the old copies configured. It does not remove unrelated packages. Restart Pi after switching sources. Direct `pi install` commands do not perform this cleanup; if you used one, run the source-switching command above once to reconcile the copies.
+Add `--local` at the end to install for the current project. The installer checks `--version` on the same Pi executable it will use for installation. An unsupported version stops with `LMM_PI_HOST_UNSUPPORTED`; an executable that cannot be inspected stops with `LMM_PI_HOST_UNVERIFIED`. Both stop before installing or removing sources. `LMM_PI_BIN` can select an absolute path to your intended Pi executable.
+
+After that check, the installer installs the chosen source, then removes other configured copies of this exact package from the user and current-project scopes. If the new install fails, it leaves the old copies configured. It does not remove unrelated packages. Restart Pi after switching sources. Direct `pi install` commands do not perform this cleanup; if you used one, run the source-switching command above once to reconcile the copies.
+
+When upgrading from Pi 0.86.1, 0.87.1 or 0.99.2, upgrade the Pi executable first and confirm that its `pi --version` is at least stable 1.0.4. Then switch the provider source and restart Pi. The extension also checks the executing host's exported `VERSION` before registering providers, commands or event handlers. An unsupported host is refused without replacing your existing settings or login; malformed and prerelease version strings are refused as well.
 
 To update one already-selected source without switching it:
 
@@ -56,31 +64,25 @@ The extension also provides these commands:
 
 Current alpha releases request the LMM application scopes `catalog:read balance:read usage:read models:invoke` plus the built-in `mcp:bounties` and `mcp:drawing` scopes. Older alpha installations may have an authorization created before one or more of those scopes existed. The server preserves those historical grants without silently adding permissions the installed client did not request. After updating the provider, run `/login` again if you need a newly introduced protected resource such as usage activity or a built-in MCP endpoint.
 
-Selectable models start with the account-specific LMM catalog. The extension resolves their capabilities from the current [models.dev](https://models.dev) directory and Pi's installed transport profiles. Providers and model IDs are read from the directory without a fixed vendor allowlist. A newly listed chat model can become selectable without a plugin or Pi release when LMM advertises a supported protocol and supplies complete native pricing. LMM still validates every request against the live account, group and model policy.
+Selectable models come from the account-specific LMM catalog. Every authorized text-capable model with a supported advertised protocol is retained, including new names absent from Pi or models.dev. The last verified account model list is cached for up to 24 hours and bound to the OAuth login session. The relay validates every request against live account, group and model policy.
 
-Network-enabled discovery refreshes public metadata when its 24-hour cache expires. `/lmm-prices` forces a metadata refresh before rebuilding the account catalog. The public request has a five-second timeout and a 32 MiB response limit. A failed refresh retains the last valid metadata; a new installation can fall back to the bundled MIT-licensed snapshot. The public cache lives in `<agent-dir>/lmm-models-dev` and survives restarts. This is separate from Pi's 24-hour, OAuth-session-bound cache of account-authorized models. Network-disabled discovery only reads local caches.
+The plugin automatically fetches the complete public [models.dev catalog](https://models.dev/api.json?type=all) and caches it for 24 hours. ETag revalidation, atomic replacement and concurrent-request deduplication keep the cache current; failed downloads preserve valid older data. `LMM_MODELS_DEV_CACHE` selects the cache file and `LMM_MODELS_DEV_TTL_MS` sets its lifetime. The default is the platform cache directory under `lmm/models-dev-v1.json`. Public requests contain no LMM credentials or account data. MIT attribution remains in `src/models-dev.LICENSE`.
 
-Matching tries exact IDs first, then normalized IDs, provider namespaces, display names and canonical IDs supplied by models.dev. For example, `FutureVendor/Novel_v7_2_flash` can match `futurevendor/novel-v7.2-flash`. Case, spaces and separators can differ; version numbers, parameter sizes and variants such as `mini`, `pro`, `flash`, `thinking` and `preview` remain significant. Different canonical identities are ambiguous. Matching never rewrites the original LMM model ID sent to the gateway, and no nearest-name substitution or automatic cross-model fallback occurs.
+Metadata matching tolerates case, punctuation, provider prefixes, reordered tokens, date suffixes and small spelling differences. Numeric generations and sizes stay distinct, ambiguous matches stay unknown, and wire model IDs never change. Server metadata wins over public metadata and installed host profiles. Unknown budgets use 32,768 context tokens and 4,096 output tokens, capped by available limits. Explicit specialized types and models without text input/output remain inspection-only.
 
-Existing Pi model profiles retain their reviewed reasoning and image controls, with public metadata correcting capacities. A new metadata-only model uses a restricted text profile until its thinking/image transport has a reviewed Pi profile; a reasoning boolean alone does not describe vendor-specific controls. Explicit non-chat, mixed-output, tool-less and incomplete metadata remains read-only. Unknown prices are not replaced by zero. `/lmm-prices` continues to show every LMM catalog entry and explains why an entry is not selectable.
+After upgrading from an older alpha, restart Pi and run `/model` or `/lmm-prices` once. The provider rebuilds the session-bound cache from the current Pi catalog; it does not trust stale `reasoning:false` metadata from an older plugin.
 
-Only the fixed public `https://models.dev/api.json` URL is fetched. No OAuth token, prompt, account model list or balance is sent to models.dev. Its provider URLs, headers and credentials are never used for LMM requests. Separate maximum-input limits cap Pi's single context window conservatively.
+On supported hosts exposing effective settings, a saved LMM default also refreshes discovery after Pi falls back to another provider because LMM's cache is empty or expired. The current selection stays as chosen; use `/model` to select the refreshed LMM entry. A non-LMM selection with a non-LMM saved default skips this startup refresh. Hosts do not expose whether an initial non-LMM selection came from a fallback or an explicit CLI/SDK override, so a saved LMM default can still trigger discovery in that case. A supported host without effective-settings access can recover discovery with `/lmm-prices`.
 
-For models advertised by LMM as `openai-completions`, the plugin still uses the exact Pi catalog entry for the upstream model. This is important for models whose native Pi adapter is different, such as Astra (Responses), Claude (Anthropic), or Gemini (Google): their `reasoning`, supported thinking levels, context window, and output limit are preserved while LMM translates the OpenAI-compatible request upstream. Non-thinking models remain non-thinking. The model's map may intentionally remove levels that the upstream does not support, so Pi can clamp the global default to the nearest valid level.
+Reasoning controls come from public reasoning options and installed host profiles. A public `interleaved.field = reasoning_content` declaration enables compatible reasoning-content replay. Group names never select model capabilities or cache behavior.
 
-After upgrading from an older alpha, restart Pi and run `/model` or `/lmm-prices` once. The provider rebuilds the session-bound cache using current public metadata and installed Pi profiles; it does not trust stale `reasoning:false` metadata from an older plugin.
-
-On hosts exposing effective settings, a saved LMM default also refreshes discovery after Pi falls back to another provider because LMM's cache is empty or expired. The current selection stays as chosen; use `/model` to select the refreshed LMM entry. A non-LMM selection with a non-LMM saved default skips this startup refresh. Hosts do not expose whether an initial non-LMM selection came from a fallback or an explicit CLI/SDK override, so a saved LMM default can still trigger discovery in that case. Older hosts can recover discovery with `/lmm-prices`.
-
-For the domestic DeepSeek V4 and reviewed GLM 5.3 entries, the provider also enables long prompt-cache retention and session-affinity headers. These request cache-friendly behavior from the gateway; they do not guarantee a particular worker, retention duration, cache hit, or lower charge. See [Cache compatibility](#cache-compatibility) for overrides and the `pi-cache-optimizer` advisory.
-
-Models using server-side variable billing remain selectable when Pi has an exact official model match. Their names include `LMM variable billing`. Pi shows a public reference estimate, while the LMM wallet settlement is authoritative. Wallet values are platform credit, not spendable US dollars.
+Variable billing or missing reference prices no longer hide authorized chat models. Complete account rates take priority. Pi requires numeric cost fields; missing estimates use host placeholders and the picker says `cost estimate incomplete (server billed)`. This is not a free LMM price. `/lmm-prices` preserves unknown server rates and wallet settlement remains authoritative.
 
 ## Wallet display currency
 
 `/lmm-currency` shows the current preference. `/lmm-currency credits` (the default) and `/lmm-currency usd` switch the wallet status locally, without a network or paid model request. USD is available only with a strictly validated v2 USD balance; legacy v1's `USD` label is not proof of a dollar conversion and remains unavailable in fiat mode.
 
-For renminbi, use `/lmm-currency cny <USD-to-CNY-rate>` with your own positive finite estimate, for example `/lmm-currency cny 6.5` **only if that is the rate you intend to use**. The status explicitly labels CNY as estimated using a manual rate. No rate is hardcoded, fetched from a third party, or derived from model group/trust multipliers. `/lmm-currency cny` reuses a saved rate; without one it leaves the preference unchanged. Rates above 1,000,000, zero, negative, non-finite and invalid inputs are rejected. Out-of-range converted amounts are unavailable, never fabricated zero.
+For renminbi, use `/lmm-currency cny <USD-to-CNY-rate>` with your own positive finite estimate, for example `/lmm-currency cny 6.5` **only if that is the rate you intend to use**. The status explicitly labels CNY as estimated using a manual rate. No rate is hardcoded, fetched from a third party, or derived from model group multipliers. `/lmm-currency cny` reuses a saved rate; without one it leaves the preference unchanged. Rates above 1,000,000, zero, negative, non-finite and invalid inputs are rejected. Out-of-range converted amounts are unavailable, never fabricated zero.
 
 Preferences persist across sessions and `/reload` in `<agent-dir>/lmm-currency.json` (normally `~/.pi/agent/lmm-currency.json`; respects `PI_CODING_AGENT_DIR`), not in Pi's built-in `/settings`. Example file: `{"version":1,"unit":"cny","usdToCny":6.5}`. Only display preferences are stored, not wallet balances or credentials. Invalid/unreadable configuration falls back to credits with a warning, without overwriting the file. Failed commands or saves preserve the current preference; valid commands update the wallet status immediately and subsequent balance refreshes retain the selection. Known stale balances keep their stale marker; missing amounts/bases/rates stay unavailable. To refresh the wallet without a paid request, use `/lmm-prices`.
 
@@ -102,7 +104,7 @@ The relay continues to send the selected catalog model and never switches models
 
 A `pi-cache-optimizer` warning about missing `supportsLongCacheRetention` or `sendSessionAffinityHeaders` is a cache advisory, not evidence that OAuth or a model request failed. Run `/lmm-cache` to inspect the selected model's merged flags and open this help. That command does not read credentials, contact LMM, or trigger an assistant turn. The warning originates in the separate optimizer extension; LMM does not suppress its messages.
 
-LMM's OpenAI Chat Completions gateway enables `sendSessionAffinityHeaders` by default for every admitted model, including `GPT-Pro / gpt-6-astra`. This is a gateway routing setting independent of the vendor model metadata. The reviewed domestic DeepSeek V4 and GLM 5.3 profiles also enable long cache retention. After an upgrade, restart Pi, open `/model`, select the model again, and inspect `/lmm-cache` before adding an override. Do not reauthorize solely because of this cache warning. An actual 401/403 or request error needs separate diagnosis.
+LMM's OpenAI Chat Completions gateway enables session-affinity headers for all admitted models. Long retention comes only from an installed host profile or explicit user override; no model or group whitelist enables it. After upgrading, restart Pi and inspect `/lmm-cache` before adding overrides. Reauthorization is needed only for actual grant or authentication problems.
 
 For another route, set `supportsLongCacheRetention` to `true` only when the gateway and backing model accept the adapter's long-retention fields. Use `sendSessionAffinityHeaders: false` to opt out for a route that should not send session headers. Model names alone do not prove support. These flags request behavior; they neither enable caching on an unsupported server nor guarantee savings. Session-affinity headers identify a session, not an OAuth credential.
 
@@ -175,7 +177,7 @@ npm test
 npm run pack:check
 ```
 
-To refresh the bundled offline fallback, run `npm run metadata:update` and review the changed IDs, capacities and exclusions before release. Routine vendor model updates use the runtime directory and do not require this command or a plugin release. The helper validates the downloaded provider sections before atomically replacing the file; malformed or incomplete downloads leave the existing snapshot intact. `curl -fsS https://models.dev/api.json | npm run metadata:update -- --stdin` supports environments where Node's HTTPS connection is unavailable. `--output PATH` writes an isolated preview instead of replacing the bundled snapshot. Metadata refresh never imports prices, transport configuration or credentials. Account rates still come from LMM; Pi reference estimates remain clearly labelled in `/lmm-prices`, and unknown pricing is not free.
+Run `npm run metadata:update` to warm or revalidate the public runtime cache. It reports available provider/model record counts and preserves an older valid cache when the public service is unavailable. There is no bundled model snapshot to regenerate. `LMM_ISSUER` can select another trusted HTTPS LMM origin; paths, credentials and insecure HTTP origins are rejected.
 
 A clean development install may report `node-domexception@1.0.0` as deprecated. It is pulled in by Pi's Google SDK through `node-fetch`/`fetch-blob`, not by LMM's declared runtime dependencies. The upstream package's latest version is also deprecated. The provider does not suppress that warning or force a transitive major-version override merely to hide it.
 
@@ -196,7 +198,7 @@ Configure the package's npm Trusted Publisher as follows; these values are case-
 
 New npm trust configurations default to staged publishing, so direct publishing must be explicitly enabled. Complete the first successful publish within two days of configuring trust. The job needs `contents: read` to download the release and `id-token: write` to obtain its short-lived npm authorization; it does not need repository write permission.
 
-After local and independent acceptance, create the version's GitHub release with `tokennotincluded-pi-lmm-provider-VERSION.tgz` and a `pi-SHA256SUMS` file containing exactly `SHA256  FILENAME`. Run the workflow with `version` (without `v`), `expected_sha256` from acceptance, and an explicit `dist_tag`. The defaults publish `0.1.0-alpha.5` to `alpha` using SHA-256 `5ff8664d2fc42f12ea148ef0f21f039c639fdb4f2cd2a6bc3f344a8546ae895d`. Prereleases cannot use `latest`.
+After local and independent acceptance, create the version's GitHub release with `tokennotincluded-pi-lmm-provider-VERSION.tgz` and a `pi-SHA256SUMS` file containing exactly `SHA256  FILENAME`. Run the workflow with `version` (without `v`), `expected_sha256` from acceptance, and an explicit `dist_tag`. Supply the accepted version and its independently verified archive hash explicitly; prereleases use the alpha distribution tag. Prereleases cannot use `latest`.
 
 The workflow checks the release asset identity, hash, package name/version/repository, and every packaged byte against the version tag's source. It enumerates the tagged package without lifecycle scripts, then publishes the accepted tarball without rebuilding it. A repeat run reads the exact registry version and archive integrity first: identical bytes with the requested tag already set skip publication; different bytes or a different tag stop for inspection. It never repairs distribution tags automatically. Read-back checks registry integrity, tags and provenance metadata, including that a non-`latest` publication preserved `latest`. The provenance URL is included in the result for separate attestation inspection and signature verification.
 
@@ -211,24 +213,14 @@ The LMM extension reminds the selected LMM model to use Pi's active `write` and 
 On Pi hosts exposing effective shell settings, for LMM models using Pi's local built-in `bash`, a `tool_call` guard also checks direct `apply_patch` commands before execution. If the command is unavailable in that shell, the call is blocked with guidance to use the active native file tools. An existing command is allowed. A standalone `xdg-open` with a literal missing local file is also blocked until the file exists. These are narrow checks, not a general shell parser: custom/remote bash tools, shell prefixes that can change filesystem visibility, and compound preview commands retain prompt guidance only.
 
 
-## Remote control with any model
+## Host integration checks
 
-The extension also connects Pi to the LMM remote-control page. You do **not** need to select an LMM model. Keep your existing provider/model selected.
+Run `npm test`, `npm run typecheck` and `npm run test:pi`. The native Pi loading check verifies the model-provider commands. `PI_BIN` selects the installed CLI; current local checks use Pi 1.5.2. Tests use isolated settings and fixture credentials, with no paid model calls.
 
-1. Update the extension and use `/login lmm`. Approve the new remote-control permission. Existing logins must approve it again; old grants do not gain control permission automatically.
-2. Run `/lmm-remote on` on the machine running Pi and confirm. The plugin displays a new session PIN locally. This setting enables automatic connection for future interactive Pi sessions.
-3. Open `https://api.lmm.best/remote-control`, sign in to the same account and enter the PIN. Send tasks, add instructions, stop work and answer plugin questions there.
+The `v0.1.0-alpha.7` source passed [CI run 44739484486](https://github.com/TokenNotIncluded/pi-lmm-provider/actions/runs/44739484486) on 2026-11-20. Pi 1.0.4, 1.5.2 and the then-current `latest`, 1.6.0, each passed 175 tests with zero failures or skips: the original 167 tests plus eight host-version and installer checks. All three also passed the original typecheck, package and native-host steps. This is source and host compatibility evidence; live Core OAuth, model calls, revocation and billing reconciliation still require production acceptance.
 
-`/lmm-remote status` displays the current connection and PIN locally. `/lmm-remote off` disables future automatic connections and removes the active relay session. Locking the web page only drops that page's key and messages; it does not stop Pi.
+The supported matrix runs the original typecheck, unit, package and native-host checks on fixed Pi 1.0.4, fixed 1.5.2 and npm `latest`. Its dependency checks still require the selected internal package versions, one canonical instance for each internal package, a clean `npm ls` result and the declared `undici` override. The minimum-version change does not relax those checks.
 
-Standard select/confirm/input prompts work directly. Custom terminal components keep their original behavior and receive restricted keyboard or text input; `pi-ask-user` is covered by the SDK integration test. Large terminal views are bounded and not pixel-perfect. Arbitrary mouse, clipboard and upload widgets are not promised. Remote responses must match an active question. A local answer or completed question invalidates older remote responses.
+A separate negative matrix installs the official 0.86.1, 0.87.1 and 0.99.2 hosts into disposable fixtures. It must observe the exact `LMM_PI_HOST_UNSUPPORTED` refusal through the real host loader and the selected real installer executable, with no API registration, network attempt or configuration change. A dependency-install error, import error, timeout or unrelated nonzero exit fails that check. All three refusal checks passed in the same CI run. They verify refusal only; these hosts remain unsupported and their historical positive-matrix failures remain unchanged.
 
-The model catalog, model balance and selected provider do not gate remote credential resolution. Remote transport never calls an LMM model. Normal model-provider charges still apply to tasks you send. The relay is memory-only and requires matching backend/frontend changes; this branch is not a statement that production has been deployed.
-
-**An authenticated event-stream relay is required.** Pi subscribes to `/api/remote-control/v1/pi/sessions/{id}/events?after=N&generation=G`, with the OAuth bearer token only in the Authorization header. There is no periodic `GET /messages` and no silent polling fallback. An older server (404/405/501 or a non-SSE response) stops remote control with a local upgrade/deploy warning. Connection is reported only after a validated `ready` event, not merely a successful registration or HTTP headers. The public OAuth adapter/routing and matching server deployment are separate requirements; the internal SSE foundation alone does not expose this endpoint.
-
-Incoming commands run independently of outgoing model/tool/UI reports. Publishing wakes encrypted delivery immediately; snapshots coalesce, and assistant updates retain the latest trailing update at most every 250 ms, with finalized messages sent immediately. Timers only maintain the 30-second PUT heartbeat, stream keepalive watchdog, lease reconnection and bounded failure/Retry-After backoff—not message polling or empty-queue flush scans. PUT refreshes the two-minute session TTL and fresh encrypted state (UI requests expire after 45 seconds); stream comments do not extend TTL. Stream leases are 60 seconds, with fresh authorization before each batch and keepalive at most 15 seconds apart. Revocation stops both directions. An expired old stream may retry once with a *different* freshly resolved token for the same bound account/grant; missing, unchanged or account-changed credentials stop rather than spin.
-
-The exact event contract and local safety limits are in [docs/remote-event-stream.md](docs/remote-event-stream.md).
-
-Tests: `npm test`, `npm run typecheck`, `npm run test:pi`. The last is an explicit aggregate: native Pi package loading (including `/lmm-currency`), encrypted-image SDK tests and the published ask_user integration. `npm ci --ignore-scripts` installs the pinned `pi-ask-user@0.16.0` development dependency; `PI_ASK_USER_PATH` can point to an existing copy of that exact version instead. The aggregate itself does not fetch dependencies. `PI_BIN` selects the installed CLI. The checked-in Pi SDK dependencies and the locally verified CLI are 1.2.0. These checks use Pi's deterministic non-LMM test provider, a local encrypted SSE relay and fixture credentials; no production account or paid model request is used. `npm run test:remote` remains the individual ask_user check. Live Pro-group model requests require separate acceptance with a valid OAuth login; an expired credential protected by the refresh journal requires `/login`, not deleting the journal to replay it.
+Remote control is handled by the separate ssmcp project. This provider supplies LMM login, models, prices, balance display and local Pi tool guidance. Existing `lmm-remote.json` settings are ignored, and OAuth login no longer requests remote-control permission.

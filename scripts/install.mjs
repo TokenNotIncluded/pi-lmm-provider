@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { requireSupportedPiVersion } from '../src/host-compat.mjs';
 
 const PACKAGE = '@tokennotincluded/pi-lmm-provider';
 const REPOSITORY = 'tokennotincluded/pi-lmm-provider';
@@ -69,16 +70,39 @@ export function runPi(piBin, args, cwd, platform = process.platform, spawn = spa
   if (result.status !== 0) throw new Error(`pi ${args[0]} failed (${result.status ?? result.signal}).`);
 }
 
+/** Inspect the exact executable that will install/remove sources, before either mutation. */
+export function readPiVersion(piBin, cwd, platform = process.platform, spawn = spawnSync) {
+  const options = { cwd, stdio: ['ignore', 'pipe', 'pipe'], shell: false,
+    encoding: 'utf8', timeout: 5000, maxBuffer: 4096, windowsHide: true };
+  let result;
+  if (platform === 'win32') {
+    const script = "$ErrorActionPreference = 'Stop'; $piArgs = @(ConvertFrom-Json -InputObject $env:LMM_PI_ARGS); & $env:LMM_PI_BIN @piArgs; exit $LASTEXITCODE";
+    result = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+      ...options, env: { ...process.env, LMM_PI_BIN: piBin, LMM_PI_ARGS: JSON.stringify(['--version']) },
+    });
+  } else {
+    result = spawn(piBin, ['--version'], options);
+  }
+  if (result.error || result.status !== 0 || typeof result.stdout !== 'string') {
+    throw Object.assign(new Error('LMM_PI_HOST_UNVERIFIED: unable to inspect the selected Pi executable. No sources were changed.'), {
+      code: 'LMM_PI_HOST_UNVERIFIED',
+    });
+  }
+  return result.stdout.trim();
+}
+
 export function switchSource(source, local = false, options = {}) {
   const cwd = options.cwd ?? process.cwd();
   const agentDir = options.agentDir ?? process.env.PI_CODING_AGENT_DIR ?? join(homedir(), '.pi', 'agent');
   const userSettings = join(agentDir, 'settings.json');
   const projectSettings = join(cwd, '.pi', 'settings.json');
   if (!isLmmPackageSource(source, cwd)) throw new Error(`The source must contain ${PACKAGE}.`);
-  const removals = planRemoval(source, local, userSettings, projectSettings, cwd);
   const defaultPi = process.platform === 'win32' ? 'pi.cmd' : 'pi';
   const piBin = options.piBin ?? process.env.LMM_PI_BIN ?? defaultPi;
   if (piBin !== defaultPi && !isAbsolute(piBin)) throw new Error('LMM_PI_BIN must be an absolute path to the installed Pi executable.');
+  const inspectVersion = options.inspectVersion ?? readPiVersion;
+  requireSupportedPiVersion(inspectVersion(piBin, cwd));
+  const removals = planRemoval(source, local, userSettings, projectSettings, cwd);
   const run = options.run ?? ((args) => runPi(piBin, args, cwd));
   run(['install', ...(local ? ['--local'] : []), source]);
   for (const item of removals) run(['remove', ...(item.scope === 'project' ? ['--local'] : []), item.source]);

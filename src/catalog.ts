@@ -1,3 +1,4 @@
+import { parseMetadata, type ServerMetadata } from './server-metadata.ts';
 import type { Model, ModelCost } from '@earendil-works/pi-ai';
 import {
   PROVIDER_ID, SUPPORTED_APIS, base64url, canonicalId, nullableNumber, object, nonnegative,
@@ -7,13 +8,13 @@ import {
 export interface Group { id: string; name: string; scope: string; multiplier: number | null }
 export interface Pricing {
   currency: string; unit: string; price_basis: string;
-  group_multiplier: number | null; trust_multiplier: number | null;
+  group_multiplier: number | null;
   input: number | null; output: number | null; cache_read: number | null; cache_write: number | null; request: number | null;
   final_cost_depends_on_usage: boolean; updated_at: number;
 }
 export interface CatalogEntry {
   id: string; group_id: string; group: string; upstream_model: string; name: string;
-  apis: LmmApi[]; pricing: Pricing; native_cost: ModelCost | null;
+  metadata?: ServerMetadata; apis: LmmApi[]; pricing: Pricing; native_cost: ModelCost | null;
 }
 export interface Catalog { schema_version: 1; resource: string; updated_at: number; groups: Group[]; models: CatalogEntry[] }
 
@@ -30,7 +31,7 @@ function parsePricing(value: unknown): Pricing {
   requireValue(typeof row.final_cost_depends_on_usage === 'boolean');
   return {
     currency: text(row.currency, 16), unit: text(row.unit, 64), price_basis: text(row.price_basis, 64),
-    group_multiplier: nullableNumber(row.group_multiplier), trust_multiplier: nullableNumber(row.trust_multiplier),
+    group_multiplier: nullableNumber(row.group_multiplier),
     input: nullableNumber(row.input), output: nullableNumber(row.output), cache_read: nullableNumber(row.cache_read),
     cache_write: nullableNumber(row.cache_write), request: nullableNumber(row.request),
     final_cost_depends_on_usage: row.final_cost_depends_on_usage, updated_at: unixSeconds(row.updated_at),
@@ -46,7 +47,7 @@ function nativeCost(value: unknown, pricing: Pricing): ModelCost | null {
     cacheRead: nonnegative(row.cacheRead), cacheWrite: nonnegative(row.cacheWrite),
   };
   requireValue(pricing.currency === 'USD' && pricing.unit === 'million_tokens' &&
-    (pricing.price_basis === 'configured_base_rates' || pricing.price_basis === 'dynamic_estimate') && pricing.request === null,
+    (pricing.price_basis === 'configured_base_rates' || pricing.price_basis === 'dynamic_estimate' || pricing.price_basis === 'effective_user_rates') && pricing.request === null,
     'LMM advertised a native cost for incompatible billing.');
   requireValue(cost.input === pricing.input && cost.output === pricing.output && cost.cacheRead === pricing.cache_read && cost.cacheWrite === pricing.cache_write,
     'LMM native cost differs from its already-adjusted server rates.');
@@ -68,7 +69,7 @@ function parseEntry(value: unknown, groups: ReadonlyMap<string, Group>): Catalog
   }
   requireValue(new Set(apis).size === apis.length);
   const pricing = parsePricing(row.pricing);
-  return { id, group_id, group, upstream_model, name: text(row.name), apis, pricing, native_cost: nativeCost(row.native_cost, pricing) };
+  return { id, group_id, group, upstream_model, name: text(row.name), metadata: parseMetadata(row.metadata), apis, pricing, native_cost: nativeCost(row.native_cost, pricing) };
 }
 
 export function parseCatalog(value: unknown, resource: string, grantedScope: string): Catalog {
@@ -84,7 +85,7 @@ export function parseCatalog(value: unknown, resource: string, grantedScope: str
   return { schema_version: 1, resource, updated_at: unixSeconds(body.updated_at), groups, models };
 }
 
-/** Deliberately not inferred from names. The v1 wire contract does not yet provide this. */
+/** Host capabilities derived from server metadata and supported transports. */
 export interface VerifiedCapabilities {
   api: LmmApi;
   contextWindow: number;
@@ -95,6 +96,8 @@ export interface VerifiedCapabilities {
   compat: NonNullable<Model<LmmApi>['compat']>;
   /** Public Pi catalog rates used only when LMM cannot express variable billing in ModelCost. */
   referenceCost?: ModelCost;
+  /** Numeric host placeholders are disclosed separately from server billing. */
+  unknownCostFields?: string[];
   thinkingLevelMap?: Model<LmmApi>['thinkingLevelMap'];
   provenance: string;
 }
@@ -119,7 +122,7 @@ export function admitCatalog(catalog: Catalog, issuer: string, resolve: Capabili
     text(capabilities.provenance);
     const multiplier = entry.pricing.group_multiplier === null ? 'unknown' : `${entry.pricing.group_multiplier}×`;
     const estimate = entry.pricing.price_basis === 'dynamic_estimate' ? ' · estimate' : '';
-    const variable = entry.native_cost ? '' : ' · LMM variable billing';
+    const variable = entry.native_cost ? '' : capabilities.unknownCostFields?.length ? ' · cost estimate incomplete (server billed)' : ' · reference estimate (server billed)';
     const model: Model<LmmApi> = {
       id: nativeModelId(entry), name: `${entry.group} / ${entry.upstream_model} · group ${multiplier}${estimate}${variable}`,
       provider: PROVIDER_ID, api: capabilities.api,
@@ -154,11 +157,11 @@ export function priceReport(admissions: readonly Admission[], filter = '', group
       : p.unit === 'request'
         ? `  request ${amount(p.request)}; token rates are not provided.`
         : `  input ${amount(p.input)}, output ${amount(p.output)}, cache read ${amount(p.cache_read)}, cache write ${amount(p.cache_write)}, request ${amount(p.request)}`;
-    const selection = model ? `Select using native /model.${entry.native_cost ? '' : p.price_basis === 'cached_model_rates' ? ' Pi cost retains a cached model estimate; server rates are unknown.' : ' Pi cost uses vendor reference rates, not an LMM quote.'}`
+    const selection = model ? `Select using native /model.${entry.native_cost ? '' : p.price_basis === 'cached_model_rates' ? ' Pi cost retains a cached model estimate; server rates are unknown.' : ' Host cost is an estimate; settlement uses server rates.'}`
       : reason ?? 'Read-only; not registered in /model.';
     return [
       `${entry.group} / ${entry.upstream_model}`,
-      `  ${p.currency}/${p.unit}; ${p.price_basis}; group ×${amount(p.group_multiplier)}, trust ×${amount(p.trust_multiplier)} (already included)`,
+      `  ${p.currency}/${p.unit}; ${p.price_basis}; group ×${amount(p.group_multiplier)} (already included)`,
       rates,
       `  ${selection} Snapshot ${new Date(p.updated_at * 1000).toISOString()}.`,
     ].join('\n');

@@ -31,7 +31,7 @@ const catalog = {
     upstream_model: name, name, apis: ['openai-completions'], native_cost: cost,
     pricing: {
       currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates',
-      group_multiplier: 1, trust_multiplier: 1, input: 1, output: 2, cache_read: 0, cache_write: 0,
+      group_multiplier: 1, input: 1, output: 2, cache_read: 0, cache_write: 0,
       request: null, final_cost_depends_on_usage: true, updated_at: 1,
     },
   })),

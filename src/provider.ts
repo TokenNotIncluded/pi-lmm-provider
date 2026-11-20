@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Api, Credential, Model, ModelsStoreEntry, Provider, RefreshModelsContext } from '@earendil-works/pi-ai';
 import { balanceStatus, parseBalance, type Balance } from './balance.ts';
 import { type CurrencyPreference } from './currency.ts';
@@ -8,7 +7,7 @@ import {
   type Admission, type CapabilityResolver, type CatalogEntry, type Group, type Pricing,
 } from './catalog.ts';
 import { resolveKnownCapabilities } from './capabilities.ts';
-import { ModelMetadataCache } from './models-dev-cache.ts';
+import { loadModelsDev } from './models-dev-cache.ts';
 import { LmmHttp, type HttpOptions } from './http.ts';
 import { LmmOAuth } from './oauth.ts';
 import {
@@ -59,8 +58,7 @@ function cachedEntry(model: unknown, updatedAt: number): CatalogEntry | undefine
       // Pi persists numeric model estimates, not the server billing contract.
       // Keep those estimates for host continuity without inventing a server quote.
       currency: 'unknown', unit: 'unknown', price_basis: 'cached_model_rates',
-      group_multiplier: null, trust_multiplier: null,
-      input: null, output: null, cache_read: null, cache_write: null,
+      group_multiplier: null, input: null, output: null, cache_read: null, cache_write: null,
       request: null, final_cost_depends_on_usage: true, updated_at: updatedAt,
     };
     const group_id = base64url(group);
@@ -87,8 +85,6 @@ interface Snapshot {
 export interface LmmProviderOptions extends HttpOptions {
   /** Test/review seam, not a new wire contract, flag, or production capability default. */
   capabilities?: CapabilityResolver;
-  /** Public metadata cache, separate from OAuth/session-bound account models. */
-  metadataCacheDirectory?: string;
   loginTimeoutMs?: number;
   refreshJournalDirectory?: string;
   onStatus?: (status: string | undefined) => void;
@@ -103,8 +99,7 @@ export class LmmIntegration {
   readonly http: LmmHttp;
   readonly oauth: LmmOAuth;
   readonly provider: Provider;
-  private readonly capabilities: CapabilityResolver;
-  private readonly metadata?: ModelMetadataCache;
+  private readonly capabilities?: CapabilityResolver;
   private readonly notify: (status: string | undefined) => void;
   private readonly shutdown = new AbortController();
   private current?: Snapshot;
@@ -114,7 +109,6 @@ export class LmmIntegration {
   private balancePending?: { hash: string; task: Promise<void> };
   private authSnapshotPending?: { hash: string; task: Promise<void> };
   private epoch = 0;
-  private readonly remoteAuthContext = new AsyncLocalStorage<{ session?: string }>();
 
   constructor(options: LmmProviderOptions = {}) {
     this.http = new LmmHttp(options);
@@ -125,10 +119,7 @@ export class LmmIntegration {
       options.clientId,
       options.hostName,
     );
-    this.metadata = options.capabilities ? undefined : new ModelMetadataCache({
-      fetch: options.fetch, directory: options.metadataCacheDirectory,
-    });
-    this.capabilities = options.capabilities ?? ((entry) => resolveKnownCapabilities(entry, this.metadata!.snapshot));
+    this.capabilities = options.capabilities ?? resolveKnownCapabilities;
     this.notify = options.onStatus ?? (() => {});
     this.currencyPreference = { ...(options.currencyPreference ?? { unit: 'credits' }) };
     const relay = createRelay(this.http, {
@@ -151,20 +142,16 @@ export class LmmIntegration {
               if (epoch === this.epoch) this.pendingLogin = snapshot;
             } catch {
               // Retain a valid login even if read-only discovery is temporarily unavailable.
-              interaction.notify({ type: 'progress', message: 'LMM login succeeded, but its catalog or balance is unavailable. Use /lmm-prices to retry discovery; unknown models are not registered.' });
+              interaction.notify({ type: 'progress', message: 'LMM login succeeded, but its catalog or balance is unavailable. Use /lmm-prices to retry discovery; discovery will retain all authorized models when it succeeds.' });
             }
-            interaction.notify({ type: 'progress', message: `LMM uses ${options.hostName ?? 'Pi'}'s native model selector. Entries without verified capabilities or truthful native pricing remain read-only. Automatic refresh is fenced by a durable local journal; signing out is local only.` });
+            interaction.notify({ type: 'progress', message: `LMM uses ${options.hostName ?? 'Pi'}'s native model selector. Model metadata refreshes automatically; incomplete cost estimates are labelled and server billing remains authoritative. Automatic refresh is fenced by a durable local journal; signing out is local only.` });
             return issued;
           },
           refresh: async (value, signal) => this.oauth.refresh(value, AbortSignal.any([signal, this.shutdown.signal])),
           toAuth: async (value) => {
             const current = credential(value, this.http.issuer);
             if (this.revoked.has(current.lmm_session)) throw new LmmError('revoked', 'This LMM grant was revoked. Use /logout and then /login.');
-            const remote = this.remoteAuthContext.getStore();
-            if (remote) {
-              if (!current.scope.split(' ').includes('remote:control')) throw new LmmError('unauthorized', 'Remote control needs new consent. Use /login lmm.');
-              remote.session = current.lmm_session;
-            } else await this.refreshSnapshotForAuth(current);
+            await this.refreshSnapshotForAuth(current);
             // No API-key field: especially important for the Anthropic SDK adapter.
             return { headers: { authorization: `Bearer ${current.access}` }, baseUrl: this.http.issuer };
           },
@@ -180,16 +167,6 @@ export class LmmIntegration {
       stream: relay.stream,
       streamSimple: relay.streamSimple,
     };
-  }
-
-  /** Resolve through Pi's credential store/refresh, without model discovery.
-   * Async context keeps simultaneous model calls on their normal validation path.
-   */
-  async resolveRemoteAuth<T>(resolve: () => Promise<T>): Promise<{ value: T; session: string }> {
-    const state: { session?: string } = {};
-    const value = await this.remoteAuthContext.run(state, resolve);
-    if (!state.session) throw new LmmError('unauthorized', 'Sign in with /login lmm and approve remote control.');
-    return { value, session: state.session };
   }
 
   private maybeCredential(value: Credential | undefined): LmmCredential | undefined {
@@ -226,15 +203,11 @@ export class LmmIntegration {
       session: value.lmm_session, accessHash: fingerprint(value.access), expires: value.expires,
       admissions: [], groups: [], catalogUpdatedAt: 0, checkedAt: Date.now(), catalogStale: false, balanceStale: false,
     };
-    const catalog = await this.http.bearer('/api/oauth2/catalog', value.access, signal);
+    const [catalog] = await Promise.all([this.http.bearer('/api/oauth2/catalog', value.access, signal), loadModelsDev()]);
     const parsed = parseCatalog(catalog, this.http.resource, value.scope);
     snapshot.catalogUpdatedAt = parsed.updated_at;
     snapshot.groups = parsed.groups;
-    if (scope.has('models:invoke')) {
-      await this.metadata?.refresh(signal);
-      signal.throwIfAborted();
-      snapshot.admissions = admitCatalog(parsed, this.http.issuer, this.capabilities);
-    }
+    if (scope.has('models:invoke')) snapshot.admissions = admitCatalog(parsed, this.http.issuer, this.capabilities);
     else snapshot.admissions = parsed.models.map((entry) => ({ entry, reason: 'models:invoke was not granted; read-only.' }));
     if (scope.has('balance:read')) {
       try { snapshot.balance = parseBalance(await this.http.bearer('/api/oauth2/balance', value.access, signal)); }
@@ -390,9 +363,9 @@ export class LmmIntegration {
     finally { if (this.balancePending?.task === task) this.balancePending = undefined; }
   }
 
-  /** Explicit refresh bypasses the public metadata TTL, without making a model call. */
+  /** Explicit refresh rechecks public metadata without making an inference request. */
   async refreshMetadata(signal?: AbortSignal): Promise<void> {
-    await this.metadata?.refresh(signal, true);
+    await loadModelsDev({ force: true, signal });
   }
 
   prices(filter = ''): string {

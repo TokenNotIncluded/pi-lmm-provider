@@ -1,3 +1,4 @@
+import { resolveKnownCapabilities } from '../src/capabilities.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { admitCatalog, nativeModelId, parseCatalog, priceReport } from '../src/catalog.ts';
@@ -6,7 +7,7 @@ import type { Catalog, CatalogEntry, Group, Pricing } from '../src/catalog.ts';
 const group: Group = { id: 'ZGVmYXVsdA', name: 'default', scope: 'group:ZGVmYXVsdA', multiplier: 2 };
 const pricing: Pricing = {
   currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates',
-  group_multiplier: 2, trust_multiplier: 0.5, input: 1, output: 2, cache_read: 0.1, cache_write: 0.2,
+  group_multiplier: 2, input: 1, output: 2, cache_read: 0.1, cache_write: 0.2,
   request: null, final_cost_depends_on_usage: true, updated_at: 1789240000,
 };
 const model: CatalogEntry = {
@@ -25,6 +26,7 @@ test('native selector displays readable group and model while retaining the wire
   assert.equal(admitted[0]!.model!.id, 'default / gpt-test');
   assert.equal(admitted[0]!.entry.id, model.id);
   assert.ok(!priceReport(admitted).includes(model.id));
+  assert.doesNotMatch(priceReport(admitted), /trust/i);
   assert.equal(nativeModelId({ group: '国产[Kimi/Deepseek/GLM]', upstream_model: 'deepseek-v4-flash' }),
     '国产[Kimi/Deepseek/GLM] / deepseek-v4-flash');
   assert.notEqual(nativeModelId({ group: 'a / b', upstream_model: 'c' }), nativeModelId({ group: 'a', upstream_model: 'b / c' }));
@@ -48,7 +50,7 @@ test('admits variable-billing models with a clearly labelled Pi reference cost',
     referenceCost: { input: 2, output: 8, cacheRead: 0.2, cacheWrite: 0, tiers: [{ inputTokensAbove: 100000, input: 4, output: 12, cacheRead: 0.4, cacheWrite: 0 }] }, provenance: 'fixture',
   }));
   assert.ok(admission?.model);
-  assert.match(admission.model.name, /LMM variable billing/);
+  assert.match(admission.model.name, /reference estimate \(server billed\)/);
   assert.equal(admission.model.cost.input, 2);
   assert.equal(admission.model.cost.tiers?.[0]?.output, 12);
 });
@@ -63,7 +65,7 @@ test('price report distinguishes expression billing and Pi reference costs from 
   const report = priceReport(admitted);
   assert.match(report, /1 selectable chat models, 0 read-only entries/);
   assert.match(report, /Server expression billing; fixed per-token rates are not provided/);
-  assert.match(report, /vendor reference rates, not an LMM quote/);
+  assert.match(report, /Host cost is an estimate; settlement uses server rates/);
   assert.ok(!report.includes('input unknown, output unknown'));
   assert.match(report, /Unknown is not free/);
   assert.equal(admitted[0]!.model!.cost.output, 2, 'display formatting does not modify native costs');
@@ -110,4 +112,23 @@ test('accepts a dynamic estimate as native cost while retaining its estimate bas
   const result = parseCatalog({ ...catalog, models: [{ ...model, pricing: { ...pricing, price_basis: 'dynamic_estimate' } }] }, catalog.resource, 'group:ZGVmYXVsdA');
   assert.equal(result.models[0]!.pricing.price_basis, 'dynamic_estimate');
   assert.equal(result.models[0]!.native_cost?.input, 1);
+});
+
+const serverMetadata = {context_window: 128000, max_input_tokens: 100000, max_output_tokens: 16000,
+  input_modalities: ['text'], output_modalities: ['text'], reasoning: true, tool_call: true, source: 'server'};
+test('server metadata admits new IDs, refreshes limits/prices, removes models without a plugin release', () => {
+  const read = (models: unknown[]) => admitCatalog(parseCatalog({...catalog, models}, catalog.resource, group.scope), 'https://lmm.test', resolveKnownCapabilities);
+  const row = {...model, metadata: serverMetadata, pricing: {...pricing, price_basis: 'effective_user_rates'}};
+  const [first] = read([row]);
+  assert.equal(first!.model!.contextWindow, 100000);
+  assert.equal(first!.model!.cost.input, 1); // already adjusted; do not multiply again
+  assert.equal(first!.entry.upstream_model, 'gpt-test');
+  const [next] = read([{...row, metadata: {...serverMetadata, context_window: 64000},
+    pricing: {...row.pricing, input: 3}, native_cost: {...row.native_cost, input: 3}}]);
+  assert.equal(next!.model!.contextWindow, 64000);
+  assert.equal(next!.model!.cost.input, 3);
+  assert.deepEqual(read([]), []);
+  assert.equal(read([{...row, metadata: {...serverMetadata, context_window: null, max_input_tokens: null}}])[0]!.model?.contextWindow, 32768);
+  assert.equal(read([{...row, native_cost: null}])[0]!.model?.cost.input, 1);
+  assert.throws(() => read([{...row, metadata: {...serverMetadata, max_output_tokens: -1}}]));
 });
