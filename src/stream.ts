@@ -13,6 +13,9 @@ import { MAX_MODEL_REQUEST_RETRIES, parseRetryAfter, retryDelay, waitForRetry } 
 
 export { MAX_MODEL_REQUEST_RETRIES } from './retry.ts';
 
+// Core enforces this limit before selecting the upstream.
+const MAX_RELAY_OUTPUT_TOKENS = 65_536;
+
 const streams: Record<LmmApi, ProviderStreams> = {
   'openai-completions': openAICompletionsApi(),
   'openai-responses': openAIResponsesApi(),
@@ -174,13 +177,30 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
         const originalOnPayload = options.onPayload;
         const wireOptions: ProviderStreamOptions = {
           ...options, apiKey: undefined, headers, env: {}, fetch: guardedFetch,
-          maxTokens: options.maxTokens ?? model.maxTokens,
+          maxTokens: Math.min(options.maxTokens ?? model.maxTokens, MAX_RELAY_OUTPUT_TOKENS),
           // The relay owns retries so the SDK cannot replay a billable request.
           maxRetries: 0,
           onPayload: async (payload, payloadModel) => {
+            if (api === 'openai-responses') {
+              const body = object(payload);
+              const reasoning = body.reasoning;
+              if (reasoning && typeof reasoning === 'object' && 'summary' in reasoning && reasoning.summary === 'auto') {
+                const { summary: _, ...effort } = reasoning;
+                body.reasoning = effort;
+              }
+              // The SDK asks for encrypted reasoning by default. Core's
+              // stateless Responses endpoint accepts the effort alone.
+              if (Array.isArray(body.include) && body.include.length === 1 && body.include[0] === 'reasoning.encrypted_content') {
+                delete body.include;
+              }
+            }
             const replacement = await originalOnPayload?.(payload, payloadModel);
             const body: Record<string, unknown> = { ...object(replacement ?? payload), model: entry.upstream_model, stream: true };
-            if (diagnostics) diagnostics.reasoningEffort = typeof body.reasoning_effort === 'string' ? body.reasoning_effort : undefined;
+            if (diagnostics) {
+              const effort = api === 'openai-responses' && body.reasoning && typeof body.reasoning === 'object'
+                ? (body.reasoning as Record<string, unknown>).effort : body.reasoning_effort;
+              diagnostics.reasoningEffort = typeof effort === 'string' ? effort : undefined;
+            }
             return body;
           },
         };

@@ -174,6 +174,35 @@ test('real Pi adapter emits thinking events and persists actual request/declared
 });
 
 
+test('Pi Responses respects the gateway output limit and keeps the selected effort', async () => {
+  const cost = { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 };
+  const model: Model<LmmApi> = {
+    id: 'GPT-Pro / gpt-6.1-sol', name: 'test', provider: 'lmm', api: 'openai-responses',
+    baseUrl: 'https://api.lmm.best/v1', reasoning: true, input: ['text'], cost,
+    contextWindow: 1_050_000, maxTokens: 128_000,
+  };
+  const entry: Admission['entry'] = {
+    id: 'fixture', group_id: 'R1BULVBybw', group: 'GPT-Pro', upstream_model: 'gpt-6.1-sol',
+    name: 'test', apis: ['openai-responses'], native_cost: cost,
+    pricing: { currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates',
+      group_multiplier: 1, input: 1, output: 2, cache_read: 0, cache_write: 0,
+      request: null, final_cost_depends_on_usage: true, updated_at: 1 },
+  };
+  const payloads: Array<Record<string, unknown>> = [];
+  const http = new LmmHttp({ fetch: async (_input, init) => {
+    payloads.push(JSON.parse(String(init?.body)));
+    return Response.json({ error: { message: 'fixture' } }, { status: 400 });
+  } });
+  const relay = createRelay(http, { lookup: () => ({ model, entry }), onFinish: async () => {} });
+  await relay.streamSimple(model, normalizeContext({ messages: [{ role: 'user', content: 'hello', timestamp: 1 }] }), {
+    headers: { authorization: 'Bearer lmm_at_fixture' }, reasoning: 'medium',
+  }).result();
+  assert.equal(payloads.length, 1);
+  assert.equal(payloads[0]?.max_output_tokens, 65_536);
+  assert.deepEqual(payloads[0]?.reasoning, { effort: 'medium' });
+  assert.equal(payloads[0]?.include, undefined);
+});
+
 test('oversized events pass through intact without unbounded buffering', async () => {
   const literal = 'a'.repeat(1_000_100);
   const raw = frame(chunk(literal));
