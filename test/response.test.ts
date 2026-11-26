@@ -184,6 +184,9 @@ test('Pi Responses respects the gateway output limit and keeps the selected effo
   const entry: Admission['entry'] = {
     id: 'fixture', group_id: 'R1BULVBybw', group: 'GPT-Pro', upstream_model: 'gpt-6.1-sol',
     name: 'test', apis: ['openai-responses'], native_cost: cost,
+    metadata: { source: 'fixture', context_window: 1_050_000, max_input_tokens: null,
+      max_output_tokens: 128_000, gateway_max_output_tokens: 32_768, input_modalities: null,
+      output_modalities: null, reasoning: null, tool_call: null },
     pricing: { currency: 'USD', unit: 'million_tokens', price_basis: 'configured_base_rates',
       group_multiplier: 1, input: 1, output: 2, cache_read: 0, cache_write: 0,
       request: null, final_cost_depends_on_usage: true, updated_at: 1 },
@@ -198,9 +201,15 @@ test('Pi Responses respects the gateway output limit and keeps the selected effo
     headers: { authorization: 'Bearer lmm_at_fixture' }, reasoning: 'medium',
   }).result();
   assert.equal(payloads.length, 1);
-  assert.equal(payloads[0]?.max_output_tokens, 65_536);
+  assert.equal(payloads[0]?.max_output_tokens, 32_768);
   assert.deepEqual(payloads[0]?.reasoning, { effort: 'medium' });
   assert.equal(payloads[0]?.include, undefined);
+
+  entry.metadata = undefined;
+  await relay.streamSimple(model, normalizeContext({ messages: [{ role: 'user', content: 'hello', timestamp: 1 }] }), {
+    headers: { authorization: 'Bearer lmm_at_fixture' }, reasoning: 'medium',
+  }).result();
+  assert.equal(payloads[1]?.max_output_tokens, 4096);
 });
 
 test('oversized events pass through intact without unbounded buffering', async () => {

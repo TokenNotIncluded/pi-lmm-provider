@@ -46,6 +46,23 @@ test('fuzzy lookup never crosses numeric generations, sizes or ambiguous identit
     b: { models: { shared: profile('shared', { canonical_model_id: undefined }) } } }).resolve('shared'), undefined);
 });
 
+test('literal IDs precede normalized aliases and fuzzy ties do not favor canonical ownership', () => {
+  const spellings = parseModelsDev({ lab: { models: {
+    'nova-flash-4.1': profile('nova-flash-4.1', { limit: { context: 9000, output: 1000 } }),
+    'nova-flash-4-1': profile('nova-flash-4-1', { limit: { context: 8000, output: 1000 } }),
+  } } });
+  assert.equal(spellings.resolve('LAB/nova-flash-4.1')?.limit.context, 9000);
+  assert.equal(spellings.resolve('LAB/nova-flash-4-1')?.limit.context, 8000);
+  assert.equal(spellings.resolve('nova flash 4 1'), undefined);
+
+  const ranked = parseModelsDev({
+    lab: { models: { 'model-salen-4': profile('model-salen-4') } },
+    other: { models: { 'model-salon-4': profile('model-salon-4', { canonical_model_id: undefined }) } },
+  });
+  assert.equal(ranked.resolve('model-salin-4'), undefined);
+  assert.equal(ranked.resolve('model-salin-4', 'other')?.id, 'model-salon-4');
+});
+
 test('canonical ownership selects the direct provider dynamically, without a vendor priority list', () => {
   const data = raw();
   const catalog = parseModelsDev({ ...data, reseller: { models: {

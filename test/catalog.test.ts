@@ -120,15 +120,19 @@ test('server metadata admits new IDs, refreshes limits/prices, removes models wi
   const read = (models: unknown[]) => admitCatalog(parseCatalog({...catalog, models}, catalog.resource, group.scope), 'https://lmm.test', resolveKnownCapabilities);
   const row = {...model, metadata: serverMetadata, pricing: {...pricing, price_basis: 'effective_user_rates'}};
   const [first] = read([row]);
-  assert.equal(first!.model!.contextWindow, 100000);
+  assert.equal(first!.model!.contextWindow, 50000);
+  assert.equal(first!.maxContextWindow, 100000);
   assert.equal(first!.model!.cost.input, 1); // already adjusted; do not multiply again
   assert.equal(first!.entry.upstream_model, 'gpt-test');
-  const [next] = read([{...row, metadata: {...serverMetadata, context_window: 64000},
+  const [next] = read([{...row, metadata: {...serverMetadata, context_window: 64001, gateway_max_output_tokens: 12000},
     pricing: {...row.pricing, input: 3}, native_cost: {...row.native_cost, input: 3}}]);
-  assert.equal(next!.model!.contextWindow, 64000);
+  assert.equal(next!.model!.contextWindow, 32000);
+  assert.equal(next!.maxContextWindow, 64001);
+  assert.equal(next!.model!.maxTokens, 12000);
   assert.equal(next!.model!.cost.input, 3);
   assert.deepEqual(read([]), []);
-  assert.equal(read([{...row, metadata: {...serverMetadata, context_window: null, max_input_tokens: null}}])[0]!.model?.contextWindow, 32768);
+  assert.equal(read([{...row, metadata: {...serverMetadata, context_window: null, max_input_tokens: null}}])[0]!.model?.contextWindow, 16384);
   assert.equal(read([{...row, native_cost: null}])[0]!.model?.cost.input, 1);
   assert.throws(() => read([{...row, metadata: {...serverMetadata, max_output_tokens: -1}}]));
+  assert.throws(() => read([{...row, metadata: {...serverMetadata, gateway_max_output_tokens: 0}}]));
 });

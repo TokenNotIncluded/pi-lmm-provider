@@ -98,6 +98,8 @@ function modelRecord(provider: string, key: string, value: unknown): ModelsDevMe
   return result;
 }
 
+const literalKey = (value: string) => value.trim().normalize('NFKC').toLowerCase();
+
 function tokens(value: string): string[] {
   return value.normalize('NFKC').toLowerCase().match(/\p{L}+|\p{N}+/gu) ?? [];
 }
@@ -151,6 +153,7 @@ function profileKey(model: ModelsDevMetadata): string {
 /** Metadata lookup never changes or authorizes a gateway request model ID. */
 export class ModelsDevCatalog {
   readonly stats: { providers: number; models: number };
+  private literal = new Map<string, Entry[]>();
   private exact = new Map<string, Entry[]>();
   private reordered = new Map<string, Entry[]>();
   private dated = new Map<string, Entry[]>();
@@ -180,6 +183,9 @@ export class ModelsDevCatalog {
       const identity = model.canonical_model_id ?? qualified;
       const aliases = [...new Set([model.id, model.name, qualified, model.canonical_model_id].filter((v): v is string => !!v))];
       const entry: Entry = { model, aliases, identity: fingerprint(identity), direct: canonical.has(fingerprint(qualified)) };
+      for (const id of new Set([model.id, qualified, model.canonical_model_id])) {
+        if (id) add(this.literal, literalKey(id), entry);
+      }
       for (const alias of aliases) {
         for (const variant of new Set([alias, basename(alias)])) {
           add(this.exact, fingerprint(variant), entry);
@@ -225,15 +231,19 @@ export class ModelsDevCatalog {
     const prefix = modelId.includes('/') ? modelId.split('/')[0] : undefined;
     const preferred = this.providers.get(fingerprint(providerHint ?? prefix ?? ''));
     const variants = [...new Set([modelId, basename(modelId)])];
+    let fallback: Entry[] | undefined;
     for (const [index, key] of [
-      [this.exact, fingerprint], [this.reordered, wordKey],
+      [this.literal, literalKey], [this.exact, fingerprint], [this.reordered, wordKey],
       [this.dated, (value: string) => wordKey(undated(value))],
     ] as const) {
       for (const variant of variants) {
         const entries = index.get(key(variant));
-        if (entries?.length) return this.choose(entries, preferred);
+        if (!entries?.length) continue;
+        if (!preferred || entries.some((entry) => entry.model.provider === preferred)) return this.choose(entries, preferred);
+        fallback ??= entries;
       }
     }
+    if (fallback) return this.choose(fallback);
     const query = undated(basename(modelId));
     const queryWords = tokens(query).filter((part) => !/^\p{N}+$/u.test(part)).sort();
     const queryLetters = queryWords.join('');
@@ -254,9 +264,14 @@ export class ModelsDevCatalog {
       }
     }
     if (!scored.size) return undefined;
-    const best = Math.max(...scored.values());
-    // A near-tie between different model identities is unknown, not an arbitrary winner.
-    return this.choose([...scored].filter(([, score]) => best - score < 0.04).map(([entry]) => entry), preferred);
+    const candidates = [...scored];
+    const preferredCandidates = preferred ? candidates.filter(([entry]) => entry.model.provider === preferred) : [];
+    const ranked = preferredCandidates.length ? preferredCandidates : candidates;
+    const best = Math.max(...ranked.map(([, score]) => score));
+    const close = ranked.filter(([, score]) => best - score < 0.04).map(([entry]) => entry);
+    // Canonical hosting can choose a profile only after the model identity is unambiguous.
+    if (new Set(close.map((entry) => entry.identity)).size !== 1) return undefined;
+    return this.choose(close, preferred);
   }
 }
 

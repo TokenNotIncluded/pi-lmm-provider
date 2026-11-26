@@ -102,7 +102,12 @@ export interface VerifiedCapabilities {
   provenance: string;
 }
 export type CapabilityResolver = (entry: Readonly<CatalogEntry>) => VerifiedCapabilities | undefined;
-export interface Admission { entry: CatalogEntry; model?: Model<LmmApi>; reason?: string }
+export interface Admission {
+  entry: CatalogEntry;
+  model?: Model<LmmApi>;
+  maxContextWindow?: number;
+  reason?: string;
+}
 
 /** Pi renders model.id in its native picker. Keep wire IDs separate from readable IDs. */
 export function nativeModelId(entry: Pick<CatalogEntry, 'group' | 'upstream_model'>): string {
@@ -123,15 +128,16 @@ export function admitCatalog(catalog: Catalog, issuer: string, resolve: Capabili
     const multiplier = entry.pricing.group_multiplier === null ? 'unknown' : `${entry.pricing.group_multiplier}×`;
     const estimate = entry.pricing.price_basis === 'dynamic_estimate' ? ' · estimate' : '';
     const variable = entry.native_cost ? '' : capabilities.unknownCostFields?.length ? ' · cost estimate incomplete (server billed)' : ' · reference estimate (server billed)';
+    const contextWindow = Math.max(1, Math.floor(capabilities.contextWindow / 2));
     const model: Model<LmmApi> = {
       id: nativeModelId(entry), name: `${entry.group} / ${entry.upstream_model} · group ${multiplier}${estimate}${variable}`,
       provider: PROVIDER_ID, api: capabilities.api,
       baseUrl: capabilities.api === 'anthropic-messages' ? issuer : `${issuer}/v1`,
-      reasoning: capabilities.reasoning, input: [...capabilities.input], contextWindow: capabilities.contextWindow,
-      maxTokens: capabilities.maxTokens, compat: structuredClone(capabilities.compat), cost: structuredClone(cost),
+      reasoning: capabilities.reasoning, input: [...capabilities.input], contextWindow,
+      maxTokens: Math.min(capabilities.maxTokens, contextWindow, entry.metadata?.gateway_max_output_tokens ?? Infinity), compat: structuredClone(capabilities.compat), cost: structuredClone(cost),
       ...(capabilities.thinkingLevelMap ? { thinkingLevelMap: structuredClone(capabilities.thinkingLevelMap) } : {}),
     };
-    return { entry, model };
+    return { entry, model, maxContextWindow: capabilities.contextWindow };
   });
 }
 
@@ -149,7 +155,7 @@ export function priceReport(admissions: readonly Admission[], filter = '', group
     lines.push(`Authorized groups (${selectedGroups.length}):`);
     lines.push(...selectedGroups.map((group) => `  ${group.name} · group ×${amount(group.multiplier)} · ${selected.filter(({ entry }) => entry.group_id === group.id).length} matching catalog entries`));
   }
-  lines.push(...ordered.map(({ entry, model, reason }) => {
+  lines.push(...ordered.map(({ entry, model, maxContextWindow, reason }) => {
     const p = entry.pricing;
     const expression = p.unit === 'expression' || p.price_basis === 'tiered_expression';
     const rates = expression
@@ -163,6 +169,7 @@ export function priceReport(admissions: readonly Admission[], filter = '', group
       `${entry.group} / ${entry.upstream_model}`,
       `  ${p.currency}/${p.unit}; ${p.price_basis}; group ×${amount(p.group_multiplier)} (already included)`,
       rates,
+      ...(model && maxContextWindow ? [`  Context ${model.contextWindow} of ${maxContextWindow} tokens; model output limit ${model.maxTokens} tokens.`] : []),
       `  ${selection} Snapshot ${new Date(p.updated_at * 1000).toISOString()}.`,
     ].join('\n');
   }));

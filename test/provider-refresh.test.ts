@@ -182,6 +182,7 @@ test('Models host persists refresh and streams through the rebound provider auth
     assert.equal(exchanges, 1);
     const available = await models.getAvailable('lmm');
     assert.equal(available.length, 1);
+    assert.equal(available[0]?.contextWindow, 64000);
     const events = [];
     for await (const event of models.streamSimple(available[0]!, { messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }] })) events.push(event);
     const done = events.find((event) => event.type === 'done');

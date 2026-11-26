@@ -13,8 +13,8 @@ import { MAX_MODEL_REQUEST_RETRIES, parseRetryAfter, retryDelay, waitForRetry } 
 
 export { MAX_MODEL_REQUEST_RETRIES } from './retry.ts';
 
-// Core enforces this limit before selecting the upstream.
-const MAX_RELAY_OUTPUT_TOKENS = 65_536;
+// Legacy catalogs have no transport ceiling. Use Core's default for implicit requests.
+const LEGACY_DEFAULT_OUTPUT_TOKENS = 4096;
 
 const streams: Record<LmmApi, ProviderStreams> = {
   'openai-completions': openAICompletionsApi(),
@@ -177,7 +177,10 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
         const originalOnPayload = options.onPayload;
         const wireOptions: ProviderStreamOptions = {
           ...options, apiKey: undefined, headers, env: {}, fetch: guardedFetch,
-          maxTokens: Math.min(options.maxTokens ?? model.maxTokens, MAX_RELAY_OUTPUT_TOKENS),
+          maxTokens: Math.min(
+            options.maxTokens ?? model.maxTokens,
+            entry.metadata?.gateway_max_output_tokens ?? options.maxTokens ?? LEGACY_DEFAULT_OUTPUT_TOKENS,
+          ),
           // The relay owns retries so the SDK cannot replay a billable request.
           maxRetries: 0,
           onPayload: async (payload, payloadModel) => {
