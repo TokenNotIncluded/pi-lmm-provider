@@ -55,6 +55,9 @@ test('literal IDs precede normalized aliases and fuzzy ties do not favor canonic
   assert.equal(spellings.resolve('LAB/nova-flash-4-1')?.limit.context, 8000);
   assert.equal(spellings.resolve('nova flash 4 1'), undefined);
 
+  const short = parseModelsDev({ lab: { models: { 'gpt-6.1-sol': profile('gpt-6.1-sol') } } });
+  assert.equal(short.resolve('gpt-6.1-slo')?.id, 'gpt-6.1-sol');
+
   const ranked = parseModelsDev({
     lab: { models: { 'model-salen-4': profile('model-salen-4') } },
     other: { models: { 'model-salon-4': profile('model-salon-4', { canonical_model_id: undefined }) } },

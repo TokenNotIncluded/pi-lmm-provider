@@ -260,7 +260,7 @@ export class ModelsDevCatalog {
         const letters = words.join('');
         const edits = distance(queryLetters, letters);
         const score = 1 - edits / Math.max(queryLetters.length, letters.length);
-        if (edits <= 2 && score >= 0.86) scored.set(entry, Math.max(scored.get(entry) ?? 0, score));
+        if (edits === 1 || (edits === 2 && score >= 0.86)) scored.set(entry, Math.max(scored.get(entry) ?? 0, score));
       }
     }
     if (!scored.size) return undefined;
