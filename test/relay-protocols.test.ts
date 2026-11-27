@@ -32,9 +32,13 @@ const message = {
   content: [{ type: "output_text", text: "hello", annotations: [] }],
 };
 
-for (const protocol of ["openai-responses", "anthropic-messages"] as const) {
+for (const [protocol, failure] of [
+  ["openai-responses", undefined], ["anthropic-messages", undefined],
+  ["openai-responses", "upstream_truncated"], ["openai-responses", "settlement_pending"],
+  ["openai-responses", "other"],
+] as const) {
   test(
-    `native ${protocol} consumes SSE with OAuth headers and refreshes balance`,
+    `native ${protocol} ${failure ?? "success"} consumes SSE with OAuth headers and refreshes balance`,
     { timeout: 15000 },
     async () => {
       const modelName = protocol === "openai-responses" ? "gpt-4o" : "claude-haiku-4-5-20251001";
@@ -134,7 +138,7 @@ for (const protocol of ["openai-responses", "anthropic-messages"] as const) {
               delta: "hello",
             },
             { type: "response.output_item.done", output_index: 0, item: message },
-            {
+            failure ? { type: "error", code: failure, message: "upstream_truncated lmm_at_DO_NOT_PRINT" } : {
               type: "response.completed",
               response: {
                 id: "resp_1",
@@ -191,6 +195,21 @@ for (const protocol of ["openai-responses", "anthropic-messages"] as const) {
           { headers: auth.headers, maxTokens: 32 },
         ))
           events.push(e);
+        if (failure) {
+          const terminal = events.at(-1);
+          assert.ok(terminal?.type === "error");
+          const error = terminal.error;
+          assert.equal(error.stopReason, "error");
+          assert.equal(error.content.find((c) => c.type === "text")?.text, "hello");
+          assert.equal(events.filter((e) => e.type === "error").length, 1);
+          assert.equal(modelAttempts, 1);
+          assert.doesNotMatch(error.errorMessage!, /DO_NOT_PRINT/);
+          if (failure === "upstream_truncated") assert.match(error.errorMessage!, /upstream closed the response before completion/i);
+          else if (failure === "settlement_pending") assert.match(error.errorMessage!, /charge is being reconciled/i);
+          else assert.match(error.errorMessage!, /LMM model request failed/);
+          await balanceRefreshed;
+          return;
+        }
         const done = events.find((e) => e.type === "done");
         assert.ok(done?.type === "done", JSON.stringify(events));
         assert.equal(done.message.stopReason, "stop");

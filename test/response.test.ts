@@ -270,6 +270,17 @@ test('oversized fallback flushes an incomplete opening prefix before passing thr
   assert.equal(result.value.recoveredThinking, false);
 });
 
+test('Chat stream errors retain only recognized structured codes', async () => {
+  const raw = [
+    { error: { code: 'settlement_pending', message: 'private detail' } },
+    { error: { code: 'unknown', message: 'upstream_truncated' } },
+  ].map((body) => 'data: ' + JSON.stringify(body) + '\n\n').join('');
+  const codes: string[] = [];
+  const inspected = inspectResponse(response(raw, 1), diagnostics(), (code) => codes.push(code));
+  assert.equal(await inspected.text(), raw);
+  assert.deepEqual(codes, ['settlement_pending']);
+});
+
 test('non-SSE responses are not consumed or replaced', () => {
   const upstream = new Response('plain response', { headers: { 'content-type': 'application/json' } });
   assert.equal(inspectResponse(upstream, diagnostics()), upstream);

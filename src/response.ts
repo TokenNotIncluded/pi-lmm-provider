@@ -79,7 +79,10 @@ function reportedModel(value: unknown): value is string {
 }
 
 /** Pass SSE through while repairing leading thinking wrappers before Pi parses it. */
-export function inspectResponse(response: Response, diagnostics: RelayDiagnostics): Response {
+export function inspectResponse(
+  response: Response, diagnostics: RelayDiagnostics,
+  onFailureCode?: (code: 'upstream_truncated' | 'settlement_pending') => void,
+): Response {
   if (!response.body || response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== 'text/event-stream') return response;
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -118,6 +121,9 @@ export function inspectResponse(response: Response, diagnostics: RelayDiagnostic
     let body: Record<string, unknown> | undefined;
     try { body = record(JSON.parse(data)); } catch { /* Preserve malformed/provider-specific frames for Pi to handle. */ }
     if (!body) { emit(controller, raw + '\n\n'); return; }
+    const failureCode = diagnostics.api === 'openai-responses' && body.type === 'error'
+      ? body.code : diagnostics.api === 'openai-completions' ? record(body.error)?.code : undefined;
+    if (failureCode === 'upstream_truncated' || failureCode === 'settlement_pending') onFailureCode?.(failureCode);
     remember(body.model);
     remember(record(body.response)?.model);
     remember(record(body.message)?.model);

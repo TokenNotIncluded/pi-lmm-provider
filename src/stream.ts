@@ -127,6 +127,7 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
       let providerAborted = false;
       let partial: AssistantMessage | undefined;
       let diagnostics: RelayDiagnostics | undefined;
+      let streamFailure: LmmError | undefined;
       let responseStatus: number | undefined;
       let responseRetryAfter: number | undefined;
       try {
@@ -181,7 +182,13 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
           // retry metadata here; never retain or log the upstream error body.
           responseStatus = response.ok ? undefined : response.status;
           responseRetryAfter = parseRetryAfter(response.headers.get('retry-after'));
-          return response.ok && diagnostics ? inspectResponse(response, diagnostics) : response;
+          if (!response.ok || !diagnostics) return response;
+          return inspectResponse(response, diagnostics, (code) => {
+            const message = code === 'upstream_truncated'
+              ? 'LMM upstream closed the response before completion. Any output already received has been preserved.'
+              : 'The LMM charge is being reconciled. Check the request log for the final amount.';
+            streamFailure ??= new LmmError(code, message);
+          });
         };
         const originalOnPayload = options.onPayload;
         const wireOptions: ProviderStreamOptions = {
@@ -223,6 +230,7 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
         });
         while (true) {
           options.signal?.throwIfAborted();
+          streamFailure = undefined;
           responseStatus = undefined;
           responseRetryAfter = undefined;
           partial = undefined;
@@ -252,6 +260,7 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
               providerAborted = true;
               throw error;
             }
+            if (streamFailure) throw streamFailure;
             const failure = responseStatus === undefined || error instanceof LmmError
               ? error : { status: responseStatus, errorMessage: errorText(error) };
             const delay = !streamStarted && isTransportFailure(failure) ? retryDelay(attempt, responseRetryAfter) : undefined;
