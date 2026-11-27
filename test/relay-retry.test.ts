@@ -117,10 +117,19 @@ test('a failed HTTP request is reported once and redacted', { timeout: 2000 }, a
   assert.doesNotMatch(JSON.stringify(events), /DO_NOT_PRINT/);
 });
 
-for (const status of [400, 401, 403, 404, 409, 422, 501]) {
+for (const status of [400, 401, 402, 403, 404, 409, 413, 418, 422, 501]) {
   test(`nontransient HTTP ${status} is not retried`, async () => {
     const h = harness(fromHttp, async () => new Response(null, { status, headers: { 'retry-after': '0' } }));
-    assert.equal((await collect(h)).result.stopReason, 'error');
+    const { result, events } = await collect(h);
+    assert.equal(result.stopReason, 'error');
+    const [event] = events;
+    assert.ok(event?.type === 'error');
+    assert.equal(event.error.errorMessage, result.errorMessage);
+    assert.doesNotMatch(JSON.stringify([result, events]), /DO_NOT_PRINT/);
+    if (status === 401) assert.match(result.errorMessage!, /authorization expired/);
+    else if (status === 403) assert.match(result.errorMessage!, /not allowed/);
+    else assert.match(result.errorMessage!, new RegExp(`HTTP ${status}\\b`));
+    if (status === 400) assert.match(result.errorMessage!, /invalid or unsupported/);
     assert.equal(h.attempts, 1);
   });
 }

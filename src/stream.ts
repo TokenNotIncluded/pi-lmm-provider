@@ -72,6 +72,8 @@ function publicErrorMessage(error: unknown, retries = 0, outputStarted = false):
     if (outputStarted) return 'LMM stream disconnected after output started. The partial request was not replayed to avoid duplicate billing; try again.';
     return 'LMM stream disconnected before completion. The request was not replayed to avoid duplicate billing; try again manually.';
   }
+  if (status === 400) return 'LMM rejected the model request (HTTP 400). A request field or option is invalid or unsupported.';
+  if (status !== undefined) return `LMM rejected the model request (HTTP ${status}).`;
   return 'LMM model request failed. Check authorization, account access, and server availability.';
 }
 
@@ -143,6 +145,13 @@ export function createRelay(http: LmmHttp, hooks: RelayHooks, adapters: Readonly
         diagnostics = { requestedModel: entry.upstream_model, api, reportedModels: [], recoveredThinking: false };
         const wire: Model<Api> = { ...structuredClone(model), id: entry.upstream_model, headers: undefined };
         wire.compat = mergeCacheCompat(wire.compat, selected.compat);
+        if (api === 'openai-responses') {
+          // Core accepts request-level effort and JSON function tools. Pi can encode the
+          // same intent as per-turn instructions or provider-specific tool items.
+          const coreResponses = { supportsMidConvoEffort: false, supportsAdditionalTools: false,
+            supportsToolSearch: false, supportsOpenAIGrammarTools: false };
+          wire.compat = { ...wire.compat, ...coreResponses };
+        }
         const path = api === 'anthropic-messages' ? '/v1/messages' : api === 'openai-responses' ? '/v1/responses' : '/v1/chat/completions';
         const headers: ProviderHeaders = {
           authorization: `Bearer ${access}`, 'X-LMM-Group': entry.group_id,

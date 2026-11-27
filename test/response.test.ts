@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { normalizeContext, type Model } from '@earendil-works/pi-ai';
+import { Type } from 'typebox';
 import type { Admission } from '../src/catalog.ts';
 import { LmmHttp } from '../src/http.ts';
 import { createRelay } from '../src/stream.ts';
@@ -174,7 +175,7 @@ test('real Pi adapter emits thinking events and persists actual request/declared
 });
 
 
-test('Pi Responses respects the gateway output limit and keeps the selected effort', async () => {
+test('Pi Responses sends Core-compatible reasoning and function tools within the gateway output limit', async () => {
   const cost = { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 };
   const model: Model<LmmApi> = {
     id: 'GPT-Pro / gpt-6.1-sol', name: 'test', provider: 'lmm', api: 'openai-responses',
@@ -194,22 +195,52 @@ test('Pi Responses respects the gateway output limit and keeps the selected effo
   const payloads: Array<Record<string, unknown>> = [];
   const http = new LmmHttp({ fetch: async (_input, init) => {
     payloads.push(JSON.parse(String(init?.body)));
-    return Response.json({ error: { message: 'fixture' } }, { status: 400 });
+    const item = { type: 'message', id: 'msg_test', role: 'assistant', status: 'completed',
+      content: [{ type: 'output_text', text: 'ok', annotations: [] }] };
+    return response([
+      { type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress', content: [] } },
+      { type: 'response.output_text.delta', output_index: 0, content_index: 0, item_id: item.id, delta: 'ok' },
+      { type: 'response.output_item.done', output_index: 0, item },
+      { type: 'response.completed', response: { id: 'resp_test', status: 'completed', model: 'gpt-6.1-sol', output: [item] } },
+    ].map(frame).join(''), 128);
   } });
   const relay = createRelay(http, { lookup: () => ({ model, entry }), onFinish: async () => {} });
-  await relay.streamSimple(model, normalizeContext({ messages: [{ role: 'user', content: 'hello', timestamp: 1 }] }), {
-    headers: { authorization: 'Bearer lmm_at_fixture' }, reasoning: 'medium',
-  }).result();
-  assert.equal(payloads.length, 1);
-  assert.equal(payloads[0]?.max_output_tokens, 32_768);
-  assert.deepEqual(payloads[0]?.reasoning, { effort: 'medium' });
-  assert.equal(payloads[0]?.include, undefined);
+  const tool = { name: 'echo', description: 'Echo a word', parameters: Type.Object({ word: Type.String() }),
+    constrainedSampling: { type: 'grammar' as const, variants: { openai_regex: '[a-z]+' } } };
+  const context = normalizeContext({ systemPrompt: 'Test assistant', tools: [tool],
+    messages: [{ role: 'user', content: 'hi', timestamp: 1 }] });
+  const reasoningProfile = { supportsStrictMode: true, supportsMidConvoEffort: true,
+    supportsMidConvoSystemMessages: true, supportsAdditionalTools: true,
+    supportsToolSearch: true, supportsOpenAIGrammarTools: true };
+  for (const compat of [{}, reasoningProfile]) {
+    model.compat = compat;
+    const result = await relay.streamSimple(model, context, {
+      headers: { authorization: 'Bearer lmm_at_fixture' }, reasoning: 'medium',
+    }).result() as DiagnosticMessage;
+    const body = payloads.at(-1)!;
+    assert.deepEqual(body.input, [
+      { role: 'developer', content: 'Test assistant' },
+      { role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
+    ]);
+    assert.deepEqual(body.reasoning, { effort: 'medium' });
+    assert.equal(body.include, undefined);
+    assert.equal(body.max_output_tokens, 32_768);
+    assert.ok(Array.isArray(body.tools));
+    assert.equal(body.tools.length, 1);
+    assert.equal(body.tools[0].type, 'function');
+    assert.equal(body.tools[0].name, 'echo');
+    assert.equal(body.tools[0].parameters.properties.word.type, 'string');
+    assert.equal(result.stopReason, 'stop');
+    assert.equal(result.content.find(block => block.type === 'text')?.text, 'ok');
+    assert.equal(result.lmmDiagnostics?.reasoningEffort, 'medium');
+  }
+  assert.equal(payloads.length, 2);
 
   entry.metadata = undefined;
   await relay.streamSimple(model, normalizeContext({ messages: [{ role: 'user', content: 'hello', timestamp: 1 }] }), {
     headers: { authorization: 'Bearer lmm_at_fixture' }, reasoning: 'medium',
   }).result();
-  assert.equal(payloads[1]?.max_output_tokens, 4096);
+  assert.equal(payloads[2]?.max_output_tokens, 4096);
 });
 
 test('oversized events pass through intact without unbounded buffering', async () => {
